@@ -156,7 +156,7 @@ if roi:
             # Add the timestamp text on the map using a Marker with a popup
             folium.Marker(
                 location=[(st.session_state.ul_lat + st.session_state.lr_lat) / 2, (st.session_state.ul_lon + st.session_state.lr_lon) / 2],
-                icon=None,  # Use no icon for a clean display
+                icon=None,  # No icon
                 popup=f"🗓️ Image Date: {image_timestamp}",
             ).add_to(m)
 
