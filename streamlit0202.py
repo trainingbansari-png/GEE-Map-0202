@@ -160,7 +160,7 @@ if roi:
                 popup=f"🗓️ Image Date: {image_timestamp}",
             ).add_to(m)
 
-            # Show the map with updated data and timestamp
+            # Use `st.empty()` to refresh the map and make it like an animation
             with st.empty():
                 # Use a unique key for each map rendering to avoid duplicates
                 st_folium(m, height=550, width="100%", key=f"map_{i}")  # Key based on loop index
