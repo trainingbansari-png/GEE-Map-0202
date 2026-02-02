@@ -6,6 +6,7 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
+import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -96,7 +97,7 @@ if map_data["all_drawings"]:
     st.subheader("⬛ Drawn Rectangle Bounds")
     st.table(bounds_df)
 
-# ---------------- GEE PROCESSING ----------------
+# ---------------- GEE Processing ----------------
 if roi:
     collection_ids = {
         "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
@@ -114,30 +115,47 @@ if roi:
     st.success(f"🖼️ Images Found: {count}")
 
     if count > 0:
-        image = collection.median().clip(roi)
+        # Sort images by date
+        collection_sorted = collection.sort("system:time_start")
+        
+        # Animation loop
+        for i, image in enumerate(collection_sorted.getInfo()['features']):
+            # Extract image date
+            image_date = ee.Date(image['properties']['system:time_start']).format("YYYY-MM-dd").getInfo()
+            img = ee.Image(image['id'])
 
-        if satellite == "Sentinel-2":
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-        else:
-            vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+            # Clip image to ROI
+            clipped_image = img.clip(roi)
 
-        map_id = image.getMapId(vis)
+            # Visualization parameters
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" else {"min": 0, "max": 30000}
 
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="Google Earth Engine",
-            name=satellite,
-            overlay=True,
-        ).add_to(m)
+            # Get map ID and URL
+            map_id = clipped_image.getMapId(vis)
 
-        folium.Rectangle(
-            bounds=[
-                [st.session_state.lr_lat, st.session_state.ul_lon],
-                [st.session_state.ul_lat, st.session_state.lr_lon],
-            ],
-            color="red",
-            fill=False,
-        ).add_to(m)
+            # Clear previous layers
+            m = folium.Map(location=[22.0, 69.0], zoom_start=7)
+            
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                name=satellite,
+                overlay=True,
+            ).add_to(m)
 
-        st.subheader("🛰️ Clipped Satellite Image")
-        st_folium(m, height=550, width="100%")
+            folium.Rectangle(
+                bounds=[
+                    [st.session_state.lr_lat, st.session_state.ul_lon],
+                    [st.session_state.ul_lat, st.session_state.lr_lon],
+                ],
+                color="red",
+                fill=False,
+            ).add_to(m)
+
+            # Show the map with updated data
+            with st.empty():
+                st_folium(m, height=550, width="100%")
+                st.write(f"🗓️ Image Date: {image_date}")
+                time.sleep(1)  # Pause for animation effect
+
+        st.success("🎬 Animation Finished")
