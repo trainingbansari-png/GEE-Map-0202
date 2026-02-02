@@ -120,8 +120,13 @@ if roi:
         
         # Animation loop
         for i, image in enumerate(collection_sorted.getInfo()['features']):
-            # Extract image date
-            image_date = ee.Date(image['properties']['system:time_start']).format("YYYY-MM-dd").getInfo()
+            # Extract image timestamp (milliseconds)
+            image_timestamp = ee.Date(image['properties']['system:time_start']).format("YYYY-MM-dd HH:mm:ss").getInfo()
+
+            # Convert timestamp to hours, minutes, and seconds
+            hours, minutes, seconds = image_timestamp.split(" ")[1].split(":")
+            image_time = f"{hours}:{minutes}:{seconds}"
+
             img = ee.Image(image['id'])
 
             # Clip image to ROI
@@ -156,7 +161,7 @@ if roi:
             with st.empty():
                 # Use a unique key for each map rendering
                 st_folium(m, height=550, width="100%", key=f"map_{i}")  # Key based on loop index
-                st.write(f"🗓️ Image Date: {image_date}")
+                st.write(f"🕒 Image Time: {image_time}")  # Display image time (hours:minutes:seconds)
                 time.sleep(1)  # Pause for animation effect
 
         st.success("🎬 Animation Finished")
