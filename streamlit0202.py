@@ -123,10 +123,6 @@ if roi:
             # Extract image timestamp (milliseconds)
             image_timestamp = ee.Date(image['properties']['system:time_start']).format("YYYY-MM-dd HH:mm:ss").getInfo()
 
-            # Convert timestamp to hours, minutes, and seconds
-            hours, minutes, seconds = image_timestamp.split(" ")[1].split(":")
-            image_time = f"{hours}:{minutes}:{seconds}"
-
             img = ee.Image(image['id'])
 
             # Clip image to ROI
@@ -157,11 +153,18 @@ if roi:
                 fill=False,
             ).add_to(m)
 
-            # Show the map with updated data
+            # Add the timestamp text on the map using a Marker with a popup
+            folium.Marker(
+                location=[(st.session_state.ul_lat + st.session_state.lr_lat) / 2, (st.session_state.ul_lon + st.session_state.lr_lon) / 2],
+                icon=None,  # Use no icon for a clean display
+                popup=f"🗓️ Image Date: {image_timestamp}",
+            ).add_to(m)
+
+            # Show the map with updated data and timestamp
             with st.empty():
-                # Use a unique key for each map rendering
+                # Use a unique key for each map rendering to avoid duplicates
                 st_folium(m, height=550, width="100%", key=f"map_{i}")  # Key based on loop index
-                st.write(f"🕒 Image Time: {image_time}")  # Display image time (hours:minutes:seconds)
+                st.write(f"🕒 Image Time: {image_timestamp}")  # Show timestamp on the side as well
                 time.sleep(1)  # Pause for animation effect
 
         st.success("🎬 Animation Finished")
