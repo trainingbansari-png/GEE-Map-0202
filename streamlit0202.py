@@ -6,6 +6,8 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
+import time
+
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -108,36 +110,63 @@ if roi:
         ee.ImageCollection(collection_ids[satellite])
         .filterBounds(roi)
         .filterDate(str(start_date), str(end_date))
+        .sort("system:time_start")  # Ensure images are sorted by date
     )
 
     count = collection.size().getInfo()
     st.success(f"🖼️ Images Found: {count}")
 
     if count > 0:
-        image = collection.median().clip(roi)
+        # Prepare a list of images and timestamps
+        image_list = collection.getInfo()['features']
 
-        if satellite == "Sentinel-2":
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-        else:
-            vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+        # Loop through images to show them one by one with timestamp update
+        for i, image in enumerate(image_list):
+            # Extract timestamp of the image
+            image_timestamp = ee.Date(image['properties']['system:time_start']).format("YYYY-MM-dd HH:mm:ss").getInfo()
 
-        map_id = image.getMapId(vis)
+            img = ee.Image(image['id'])
 
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="Google Earth Engine",
-            name=satellite,
-            overlay=True,
-        ).add_to(m)
+            # Clip image to ROI
+            clipped_image = img.clip(roi)
 
-        folium.Rectangle(
-            bounds=[
-                [st.session_state.lr_lat, st.session_state.ul_lon],
-                [st.session_state.ul_lat, st.session_state.lr_lon],
-            ],
-            color="red",
-            fill=False,
-        ).add_to(m)
+            # Visualization parameters
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-        st.subheader("🛰️ Clipped Satellite Image")
-        st_folium(m, height=550, width="100%")
+            # Get map ID and URL
+            map_id = clipped_image.getMapId(vis)
+
+            # Clear previous layers
+            m = folium.Map(location=[22.0, 69.0], zoom_start=7)
+            
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                name=satellite,
+                overlay=True,
+            ).add_to(m)
+
+            folium.Rectangle(
+                bounds=[
+                    [st.session_state.lr_lat, st.session_state.ul_lon],
+                    [st.session_state.ul_lat, st.session_state.lr_lon],
+                ],
+                color="red",
+                fill=False,
+            ).add_to(m)
+
+            # Add the timestamp text on the map using a Marker with a popup
+            folium.Marker(
+                location=[(st.session_state.ul_lat + st.session_state.lr_lat) / 2, (st.session_state.ul_lon + st.session_state.lr_lon) / 2],
+                icon=None,  # No icon
+                popup=f"🗓️ Image Date: {image_timestamp}",
+            ).add_to(m)
+
+            # Use `st.empty()` to refresh the map and make it like an animation
+            with st.empty():
+                # Use a unique key for each map rendering to avoid duplicates
+                st_folium(m, height=550, width="100%", key=f"map_{i}")  # Key based on loop index
+                st.write(f"🕒 Image Time: {image_timestamp}")  # Show timestamp on the side as well
+                time.sleep(1)  # Pause for animation effect
+
+        st.success("🎬 Animation Finished")
