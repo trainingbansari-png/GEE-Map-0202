@@ -2,16 +2,18 @@ import streamlit as st
 import ee
 import folium
 import pandas as pd
-import time
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
 
-
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
 st.title("🌍 Streamlit + Google Earth Engine")
+
+# ---------------- Session State ----------------
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon"]:
+    st.session_state.setdefault(k, None)
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -28,10 +30,10 @@ initialize_ee()
 with st.sidebar:
     st.header("🧭 Area of Interest")
 
-    ul_lat = st.number_input("Upper-Left Latitude", value=22.0)
-    ul_lon = st.number_input("Upper-Left Longitude", value=69.0)
-    lr_lat = st.number_input("Lower-Right Latitude", value=21.0)
-    lr_lon = st.number_input("Lower-Right Longitude", value=70.0)
+    ul_lat = st.number_input("Upper-Left Latitude", value=st.session_state.ul_lat or 0.0)
+    ul_lon = st.number_input("Upper-Left Longitude", value=st.session_state.ul_lon or 0.0)
+    lr_lat = st.number_input("Lower-Right Latitude", value=st.session_state.lr_lat or 0.0)
+    lr_lon = st.number_input("Lower-Right Longitude", value=st.session_state.lr_lon or 0.0)
 
     st.header("📅 Date Filter")
     start_date = st.date_input("Start Date", date(2024, 1, 1))
@@ -70,16 +72,31 @@ if map_data["all_drawings"]:
     lats = [c[1] for c in coords]
     lons = [c[0] for c in coords]
 
+    st.session_state.ul_lat = max(lats)
+    st.session_state.ul_lon = min(lons)
+    st.session_state.lr_lat = min(lats)
+    st.session_state.lr_lon = max(lons)
+
     roi = ee.Geometry.Rectangle(
         [
-            min(lons),
-            min(lats),
-            max(lons),
-            max(lats),
+            st.session_state.ul_lon,
+            st.session_state.lr_lat,
+            st.session_state.lr_lon,
+            st.session_state.ul_lat,
         ]
     )
 
-# ---------------- GEE Processing ----------------
+    bounds_df = pd.DataFrame([{
+        "Upper-Left Lat": st.session_state.ul_lat,
+        "Upper-Left Lon": st.session_state.ul_lon,
+        "Lower-Right Lat": st.session_state.lr_lat,
+        "Lower-Right Lon": st.session_state.lr_lon,
+    }])
+
+    st.subheader("⬛ Drawn Rectangle Bounds")
+    st.table(bounds_df)
+
+# ---------------- GEE PROCESSING ----------------
 if roi:
     collection_ids = {
         "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
@@ -91,60 +108,36 @@ if roi:
         ee.ImageCollection(collection_ids[satellite])
         .filterBounds(roi)
         .filterDate(str(start_date), str(end_date))
-        .sort("system:time_start")  # Ensure images are sorted by date
     )
 
     count = collection.size().getInfo()
     st.success(f"🖼️ Images Found: {count}")
 
     if count > 0:
-        # Start the animation loop
-        for i, image in enumerate(collection.getInfo()['features']):
-            # Extract image timestamp (milliseconds)
-            image_timestamp = ee.Date(image['properties']['system:time_start']).format("YYYY-MM-dd HH:mm:ss").getInfo()
+        image = collection.median().clip(roi)
 
-            img = ee.Image(image['id'])
+        if satellite == "Sentinel-2":
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+        else:
+            vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-            # Clip image to ROI
-            clipped_image = img.clip(roi)
+        map_id = image.getMapId(vis)
 
-            # Visualization parameters
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" else {"min": 0, "max": 30000}
+        folium.TileLayer(
+            tiles=map_id["tile_fetcher"].url_format,
+            attr="Google Earth Engine",
+            name=satellite,
+            overlay=True,
+        ).add_to(m)
 
-            # Get map ID and URL
-            map_id = clipped_image.getMapId(vis)
+        folium.Rectangle(
+            bounds=[
+                [st.session_state.lr_lat, st.session_state.ul_lon],
+                [st.session_state.ul_lat, st.session_state.lr_lon],
+            ],
+            color="red",
+            fill=False,
+        ).add_to(m)
 
-            # Clear previous layers
-            m = folium.Map(location=[22.0, 69.0], zoom_start=7)
-            
-            folium.TileLayer(
-                tiles=map_id["tile_fetcher"].url_format,
-                attr="Google Earth Engine",
-                name=satellite,
-                overlay=True,
-            ).add_to(m)
-
-            folium.Rectangle(
-                bounds=[
-                    [min(lats), min(lons)],
-                    [max(lats), max(lons)],
-                ],
-                color="red",
-                fill=False,
-            ).add_to(m)
-
-            # Add the timestamp text on the map using a Marker with a popup
-            folium.Marker(
-                location=[(min(lats) + max(lats)) / 2, (min(lons) + max(lons)) / 2],
-                icon=None,  # No icon
-                popup=f"🗓️ Image Date: {image_timestamp}",
-            ).add_to(m)
-
-            # Use `st.empty()` to refresh the map and make it like an animation
-            with st.empty():
-                # Use a unique key for each map rendering to avoid duplicates
-                st_folium(m, height=550, width="100%", key=f"map_{i}")  # Key based on loop index
-                st.write(f"🕒 Image Time: {image_timestamp}")  # Show timestamp on the side as well
-                time.sleep(1)  # Pause for animation effect
-
-        st.success("🎬 Animation Finished")
+        st.subheader("🛰️ Clipped Satellite Image")
+        st_folium(m, height=550, width="100%")
