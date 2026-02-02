@@ -154,7 +154,8 @@ if roi:
 
             # Show the map with updated data
             with st.empty():
-                st_folium(m, height=550, width="100%")
+                # Use a unique key for each map rendering
+                st_folium(m, height=550, width="100%", key=f"map_{i}")  # Key based on loop index
                 st.write(f"🗓️ Image Date: {image_date}")
                 time.sleep(1)  # Pause for animation effect
 
