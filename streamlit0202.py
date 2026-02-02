@@ -1,6 +1,7 @@
 import streamlit as st
 import ee
 import folium
+import pandas as pd
 import time
 from folium.plugins import Draw
 from streamlit_folium import st_folium
