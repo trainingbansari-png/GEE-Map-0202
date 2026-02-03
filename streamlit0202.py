@@ -130,8 +130,12 @@ if roi:
     st.success(f"🖼️ Images Displayed: {count}")
 
     if count > 0:
-        for img in collection.toList(count):
-            image = ee.Image(img)
+        # Convert the collection to a list and process images
+        image_list = collection.toList(count)
+        
+        # Display the images on the map
+        for i in range(count):
+            image = ee.Image(image_list.get(i))  # Get each image from the list
             if satellite == "Sentinel-2":
                 vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
             else:
