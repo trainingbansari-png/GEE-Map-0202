@@ -65,6 +65,7 @@ map_data = st_folium(m, height=550, width="100%")
 # ---------------- Rectangle Handling ----------------
 roi = None
 
+# Check if drawing exists and if the coordinates are valid
 if map_data["all_drawings"]:
     geom = map_data["all_drawings"][-1]["geometry"]
     coords = geom["coordinates"][0]
@@ -72,11 +73,13 @@ if map_data["all_drawings"]:
     lats = [c[1] for c in coords]
     lons = [c[0] for c in coords]
 
+    # Update session state with the new coordinates
     st.session_state.ul_lat = max(lats)
     st.session_state.ul_lon = min(lons)
     st.session_state.lr_lat = min(lats)
     st.session_state.lr_lon = max(lons)
 
+    # Create a bounding box for the rectangle
     roi = ee.Geometry.Rectangle(
         [
             st.session_state.ul_lon,
@@ -86,15 +89,18 @@ if map_data["all_drawings"]:
         ]
     )
 
-    bounds_df = pd.DataFrame([{
-        "Upper-Left Lat": st.session_state.ul_lat,
-        "Upper-Left Lon": st.session_state.ul_lon,
-        "Lower-Right Lat": st.session_state.lr_lat,
-        "Lower-Right Lon": st.session_state.lr_lon,
-    }])
+    # Ensure all session state values are populated before trying to access them
+    if st.session_state.ul_lat is not None and st.session_state.ul_lon is not None and st.session_state.lr_lat is not None and st.session_state.lr_lon is not None:
+        bounds_df = pd.DataFrame([{
+            "Upper-Left Lat": st.session_state.ul_lat,
+            "Upper-Left Lon": st.session_state.ul_lon,
+            "Lower-Right Lat": st.session_state.lr_lat,
+            "Lower-Right Lon": st.session_state.lr_lon,
+        }])
 
-    st.subheader("⬛ Drawn Rectangle Bounds")
-    st.table(bounds_df)
+        # Display the bounds in the app
+        st.subheader("⬛ Drawn Rectangle Bounds")
+        st.table(bounds_df)
 
 # ---------------- GEE PROCESSING ----------------
 if roi:
