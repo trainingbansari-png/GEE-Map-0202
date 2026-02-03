@@ -1,13 +1,11 @@
 import streamlit as st
 import ee
 import folium
-import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
-from datetime import date
-import time
 from datetime import datetime
+import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -41,8 +39,8 @@ with st.sidebar:
     lr_lon = st.number_input("Lower-Right Longitude", value=st.session_state.lr_lon or 0.0)
 
     st.header("📅 Date Filter")
-    start_date = st.date_input("Start Date", date(2024, 1, 1))
-    end_date = st.date_input("End Date", date(2024, 12, 31))
+    start_date = st.date_input("Start Date", datetime(2024, 1, 1))
+    end_date = st.date_input("End Date", datetime(2024, 12, 31))
 
     st.header("🛰️ Satellite")
     satellite = st.selectbox(
@@ -174,31 +172,28 @@ if roi:
             # Add checkboxes to allow users to select images they want to keep
             selected = st.checkbox(f"Select Image {i + 1} ({date_time})", key=f"image_{i}")
             if selected:
-                # Store the image's timestamp (or other metadata) instead of the whole object
-                st.session_state.selected_images.append(image.get("system:time_start").getInfo())
+                # Store the image object in session_state
+                st.session_state.selected_images.append(image)
 
 # ---------------- Selected Images ----------------
 if st.session_state.selected_images:
     st.subheader("📥 Selected Images")
 
-    # Retrieve the selected images based on timestamps
+    # Retrieve the selected images
     selected_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
-    for timestamp in st.session_state.selected_images:
-        # Retrieve the image by timestamp (this can be optimized as needed)
-        selected_image = ee.Image(collection.filter(ee.Filter.eq("system:time_start", timestamp)).first())
-
+    for image in st.session_state.selected_images:
         # Visualization params
         if satellite == "Sentinel-2":
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
         else:
             vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-        map_id = selected_image.getMapId(vis)
+        map_id = image.getMapId(vis)
 
         folium.TileLayer(
             tiles=map_id["tile_fetcher"].url_format,
             attr="Google Earth Engine",
-            name=f"Selected Image {timestamp}",
+            name=f"Selected Image",
             overlay=True,
         ).add_to(selected_map)
 
