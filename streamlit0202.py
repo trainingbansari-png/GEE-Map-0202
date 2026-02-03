@@ -119,11 +119,15 @@ if roi:
         .filterDate(str(start_date), str(end_date))
     )
 
-    # Limit number of images based on slider value
+    # Get the total count of images
+    total_image_count = collection.size().getInfo()
+    st.success(f"🖼️ Total Images Found: {total_image_count}")
+
+    # Limit the collection to the slider value
     collection = collection.limit(image_count)
 
     count = collection.size().getInfo()
-    st.success(f"🖼️ Images Found: {count}")
+    st.success(f"🖼️ Images Displayed: {count}")
 
     if count > 0:
         for img in collection.toList(count):
