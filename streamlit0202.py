@@ -121,9 +121,13 @@ if roi:
 
     # Wait for the result asynchronously
     try:
-        count = image_count.getInfo()
-        if count > 0:
-            # If the collection is not empty, get the first image
+        count = image_count.getInfo()  # Fetch size using .getInfo()
+        
+        # If there are no images for the selected date
+        if count == 0:
+            st.warning(f"No images found for {selected_date}. Try a different date.")
+        else:
+            # If images exist, display the first image in the collection
             image = selected_image_collection.first()
 
             st.success(f"🖼️ Image Found for {selected_date}")
@@ -143,7 +147,5 @@ if roi:
 
             st.subheader("🛰️ Clipped Satellite Image")
             st_folium(m, height=550, width="100%")
-        else:
-            st.warning(f"No image found for {selected_date}")
     except Exception as e:
         st.error(f"Error: {e}")
