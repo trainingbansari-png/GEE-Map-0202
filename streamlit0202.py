@@ -7,6 +7,7 @@ from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
 import time
+from datetime import datetime
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -139,6 +140,11 @@ if roi:
         # Display the images on the map one by one like video frames
         for i in range(count):
             image = ee.Image(image_list.get(i))  # Get each image from the list
+
+            # Get the timestamp (system:time_start) of the image
+            timestamp = image.get("system:time_start").getInfo()
+            date_time = datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
             if satellite == "Sentinel-2":
                 vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
             else:
@@ -156,7 +162,7 @@ if roi:
             ).add_to(folium_map)
 
             # Render the updated map inside the container with a unique key
-            map_container.subheader(f"🛰️ Clipped Satellite Image (Frame {i + 1})")
+            map_container.subheader(f"🛰️ Clipped Satellite Image (Frame {i + 1}) - Date: {date_time}")
             st_folium(folium_map, height=550, width="100%", key=f"map_frame_{i}")  # Unique key for each frame
             
             # Wait for a short time to simulate video frames
