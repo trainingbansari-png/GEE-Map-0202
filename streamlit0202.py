@@ -116,11 +116,10 @@ if roi:
     # Now, we filter for images based on the selected date
     selected_image_collection = collection.filterDate(str(selected_date), str(selected_date))
 
-    # Check if the collection for the selected date has any images
-    selected_image_count = selected_image_collection.size()
+    # Use .size() to check if the collection has images, and process only if it's non-zero
+    selected_image_count = selected_image_collection.size().getInfo()
 
-    # Use .isEmpty() to check if collection has images
-    if selected_image_count.isEmpty().getInfo():
+    if selected_image_count == 0:
         st.warning(f"No images found for {selected_date}. Please select another date.")
     else:
         # Proceed to get the first image from the collection
