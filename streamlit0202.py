@@ -1,11 +1,11 @@
 import streamlit as st
 import ee
 import folium
+import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
-import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -29,7 +29,8 @@ initialize_ee()
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
-
+    
+    # Use session state values if set, else use default values
     ul_lat = st.number_input("Upper-Left Latitude", value=st.session_state.ul_lat or 0.0)
     ul_lon = st.number_input("Upper-Left Longitude", value=st.session_state.ul_lon or 0.0)
     lr_lat = st.number_input("Lower-Right Latitude", value=st.session_state.lr_lat or 0.0)
@@ -48,6 +49,7 @@ with st.sidebar:
 # ---------------- Map ----------------
 m = folium.Map(location=[22.0, 69.0], zoom_start=7)
 
+# Add draw options for rectangle only
 Draw(
     draw_options={
         "polyline": False,
@@ -65,44 +67,58 @@ map_data = st_folium(m, height=550, width="100%")
 # ---------------- Rectangle Handling ----------------
 roi = None
 
-# Check if drawing exists and if the coordinates are valid
-if map_data["all_drawings"]:
-    geom = map_data["all_drawings"][-1]["geometry"]
-    coords = geom["coordinates"][0]
+# Ensure session state variables are valid before proceeding
+if "ul_lat" in st.session_state and "ul_lon" in st.session_state and \
+    "lr_lat" in st.session_state and "lr_lon" in st.session_state:
+    
+    # Check if a rectangle was drawn
+    if map_data["all_drawings"]:
+        geom = map_data["all_drawings"][-1]["geometry"]
+        coords = geom["coordinates"][0]
 
-    lats = [c[1] for c in coords]
-    lons = [c[0] for c in coords]
+        # Extract latitudes and longitudes from the drawn rectangle
+        lats = [c[1] for c in coords]
+        lons = [c[0] for c in coords]
 
-    # Update session state with the new coordinates
-    st.session_state.ul_lat = max(lats)
-    st.session_state.ul_lon = min(lons)
-    st.session_state.lr_lat = min(lats)
-    st.session_state.lr_lon = max(lons)
+        # Update session state with the new coordinates
+        st.session_state.ul_lat = max(lats)
+        st.session_state.ul_lon = min(lons)
+        st.session_state.lr_lat = min(lats)
+        st.session_state.lr_lon = max(lons)
 
-    # Create a bounding box for the rectangle
-    roi = ee.Geometry.Rectangle(
-        [
-            st.session_state.ul_lon,
-            st.session_state.lr_lat,
-            st.session_state.lr_lon,
-            st.session_state.ul_lat,
-        ]
-    )
+        # Define the rectangle geometry for GEE processing
+        roi = ee.Geometry.Rectangle(
+            [
+                st.session_state.ul_lon,
+                st.session_state.lr_lat,
+                st.session_state.lr_lon,
+                st.session_state.ul_lat,
+            ]
+        )
 
-    # Ensure all session state values are populated before trying to access them
-    if st.session_state.ul_lat is not None and st.session_state.ul_lon is not None and st.session_state.lr_lat is not None and st.session_state.lr_lon is not None:
-        bounds_df = pd.DataFrame([{
-            "Upper-Left Lat": st.session_state.ul_lat,
-            "Upper-Left Lon": st.session_state.ul_lon,
-            "Lower-Right Lat": st.session_state.lr_lat,
-            "Lower-Right Lon": st.session_state.lr_lon,
-        }])
+        # Ensure session state values are valid before constructing the DataFrame
+        if (st.session_state.ul_lat is not None and st.session_state.ul_lon is not None and 
+            st.session_state.lr_lat is not None and st.session_state.lr_lon is not None):
+            
+            # Create DataFrame for the rectangle bounds
+            bounds_df = pd.DataFrame([{
+                "Upper-Left Lat": st.session_state.ul_lat,
+                "Upper-Left Lon": st.session_state.ul_lon,
+                "Lower-Right Lat": st.session_state.lr_lat,
+                "Lower-Right Lon": st.session_state.lr_lon,
+            }])
 
-        # Display the bounds in the app
-        st.subheader("⬛ Drawn Rectangle Bounds")
-        st.table(bounds_df)
+            # Display the bounds in the Streamlit app
+            st.subheader("⬛ Drawn Rectangle Bounds")
+            st.table(bounds_df)
+        else:
+            st.warning("Some values are missing in session state. Ensure that rectangle coordinates are drawn properly.")
+    else:
+        st.warning("No rectangle drawn yet.")
+else:
+    st.warning("Session state values are not set. Please draw a rectangle first.")
 
-# ---------------- GEE PROCESSING ----------------
+# ---------------- GEE Processing ----------------
 if roi:
     collection_ids = {
         "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
@@ -114,62 +130,38 @@ if roi:
         ee.ImageCollection(collection_ids[satellite])
         .filterBounds(roi)
         .filterDate(str(start_date), str(end_date))
-        .sort("system:time_start")  # Ensure images are sorted by date
     )
 
     count = collection.size().getInfo()
     st.success(f"🖼️ Images Found: {count}")
 
     if count > 0:
-        # Prepare a list of images and timestamps
-        image_list = collection.getInfo()['features']
+        image = collection.median().clip(roi)
 
-        for i, image in enumerate(image_list):
-            # Extract timestamp of the image
-            image_timestamp = ee.Date(image['properties']['system:time_start']).format("YYYY-MM-dd HH:mm:ss").getInfo()
+        if satellite == "Sentinel-2":
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+        else:
+            vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-            img = ee.Image(image['id'])
+        map_id = image.getMapId(vis)
 
-            # Clip image to ROI
-            clipped_image = img.clip(roi)
+        # Add the satellite image to the map
+        folium.TileLayer(
+            tiles=map_id["tile_fetcher"].url_format,
+            attr="Google Earth Engine",
+            name=satellite,
+            overlay=True,
+        ).add_to(m)
 
-            # Visualization parameters
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+        # Draw rectangle boundary on the map
+        folium.Rectangle(
+            bounds=[
+                [st.session_state.lr_lat, st.session_state.ul_lon],
+                [st.session_state.ul_lat, st.session_state.lr_lon],
+            ],
+            color="red",
+            fill=False,
+        ).add_to(m)
 
-            # Get map ID and URL
-            map_id = clipped_image.getMapId(vis)
-
-            # Clear previous layers
-            m = folium.Map(location=[22.0, 69.0], zoom_start=7)
-
-            folium.TileLayer(
-                tiles=map_id["tile_fetcher"].url_format,
-                attr="Google Earth Engine",
-                name=satellite,
-                overlay=True,
-            ).add_to(m)
-
-            folium.Rectangle(
-                bounds=[
-                    [st.session_state.lr_lat, st.session_state.ul_lon],
-                    [st.session_state.ul_lat, st.session_state.lr_lon],
-                ],
-                color="red",
-                fill=False,
-            ).add_to(m)
-
-            # Add the timestamp text on the map using a Marker with a popup
-            folium.Marker(
-                location=[(st.session_state.ul_lat + st.session_state.lr_lat) / 2, (st.session_state.ul_lon + st.session_state.lr_lon) / 2],
-                icon=None,  # No icon
-                popup=f"🗓️ Image Date: {image_timestamp}<br>Click to view image",
-            ).add_to(m)
-
-            # Use `st.empty()` to refresh the map and make it like an animation
-            with st.empty():
-                # Use a unique key for each map rendering to avoid duplicates
-                st_folium(m, height=550, width="100%", key=f"map_{i}")  # Key based on loop index
-                st.write(f"🕒 Image Time: {image_timestamp}")  # Show timestamp on the side as well
-                time.sleep(1)  # Pause for animation effect
-
-        st.success("🎬 Animation Finished")
+        st.subheader("🛰️ Clipped Satellite Image")
+        st_folium(m, height=550, width="100%")
