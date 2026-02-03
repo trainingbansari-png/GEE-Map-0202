@@ -6,7 +6,6 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
-import datetime
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -111,11 +110,17 @@ if roi:
         .filterDate(str(start_date), str(end_date))  # Filter based on start and end dates
     )
 
-    # Get the number of images in the collection
+    # Eliminate images with cloud cover (Sentinel-2: 'SCL', Landsat: 'QA60')
+    if satellite == "Sentinel-2":
+        collection = collection.filter(ee.Filter.lt('system:cloud_coverage', 20))  # Only images with < 20% cloud cover
+    else:  # Landsat-8 and Landsat-9
+        collection = collection.filter(ee.Filter.lt('system:cloud_coverage', 20))  # Modify to the correct cloud filtering criteria
+
+    # Get the number of images in the filtered collection
     num_images = collection.size().getInfo()
 
     if num_images > 0:
-        st.success(f"Found {num_images} images.")
+        st.success(f"Found {num_images} images after filtering out clouded ones.")
 
         # Add slider for selecting image index (from 1 to num_images)
         image_index = st.slider("Select Image", 1, num_images, 1)
@@ -139,4 +144,4 @@ if roi:
         except Exception as e:
             st.error(f"Error loading image: {e}")
     else:
-        st.warning("No images found for the selected date range. Please adjust the date filter.")
+        st.warning("No images found after filtering. Please adjust the cloud cover or date filter.")
