@@ -1,7 +1,6 @@
 import streamlit as st
 import ee
 import folium
-import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
@@ -119,7 +118,6 @@ if roi:
         # Prepare a list of images and timestamps
         image_list = collection.getInfo()['features']
 
-        # Loop through images to show them one by one with timestamp update
         for i, image in enumerate(image_list):
             # Extract timestamp of the image
             image_timestamp = ee.Date(image['properties']['system:time_start']).format("YYYY-MM-dd HH:mm:ss").getInfo()
@@ -137,7 +135,7 @@ if roi:
 
             # Clear previous layers
             m = folium.Map(location=[22.0, 69.0], zoom_start=7)
-            
+
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
                 attr="Google Earth Engine",
