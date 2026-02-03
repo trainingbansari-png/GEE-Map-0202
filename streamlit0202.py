@@ -121,21 +121,24 @@ if roi:
 
     if image:
         st.success(f"🖼️ Image Found for {selected_date}")
-        
+
         vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-        map_id = image.getMapId(vis)
+        try:
+            map_id = image.getMapId(vis)
 
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="Google Earth Engine",
-            name=satellite,
-            overlay=True,
-        ).add_to(m)
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                name=satellite,
+                overlay=True,
+            ).add_to(m)
 
-        # Remove the rectangle from the map
-        folium.LayerControl().add_to(m)
+            # Remove the rectangle from the map
+            folium.LayerControl().add_to(m)
 
-        st.subheader("🛰️ Clipped Satellite Image")
-        st_folium(m, height=550, width="100%")
+            st.subheader("🛰️ Clipped Satellite Image")
+            st_folium(m, height=550, width="100%")
+        except Exception as e:
+            st.error(f"Error loading image: {e}")
     else:
         st.warning(f"No image found for {selected_date}")
