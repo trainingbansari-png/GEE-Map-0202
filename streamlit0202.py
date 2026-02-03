@@ -152,14 +152,8 @@ if roi:
                 overlay=True,
             ).add_to(m)
 
-            folium.Rectangle(
-                bounds=[
-                    [st.session_state.lr_lat, st.session_state.ul_lon],
-                    [st.session_state.ul_lat, st.session_state.lr_lon],
-                ],
-                color="red",
-                fill=False,
-            ).add_to(m)
+            # Remove rectangle from the map
+            # (No rectangle box will be shown on the map anymore)
 
             st.subheader("🛰️ Clipped Satellite Image")
             st_folium(m, height=550, width="100%")
