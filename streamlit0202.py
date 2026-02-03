@@ -8,7 +8,6 @@ from google.oauth2 import service_account
 from datetime import date
 import time
 
-
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
 st.title("🌍 Streamlit + Google Earth Engine")
@@ -159,7 +158,7 @@ if roi:
             folium.Marker(
                 location=[(st.session_state.ul_lat + st.session_state.lr_lat) / 2, (st.session_state.ul_lon + st.session_state.lr_lon) / 2],
                 icon=None,  # No icon
-                popup=f"🗓️ Image Date: {image_timestamp}",
+                popup=f"🗓️ Image Date: {image_timestamp}<br>Click to view image",
             ).add_to(m)
 
             # Use `st.empty()` to refresh the map and make it like an animation
