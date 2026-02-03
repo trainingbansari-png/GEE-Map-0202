@@ -1,22 +1,21 @@
 import streamlit as st
 import ee
 import folium
+import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
-from datetime import datetime
+from datetime import date
 import time
+from datetime import datetime
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
 st.title("🌍 Streamlit + Google Earth Engine")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "selected_images"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon"]:
     st.session_state.setdefault(k, None)
-
-if "selected_images" not in st.session_state:
-    st.session_state.selected_images = []
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -39,8 +38,8 @@ with st.sidebar:
     lr_lon = st.number_input("Lower-Right Longitude", value=st.session_state.lr_lon or 0.0)
 
     st.header("📅 Date Filter")
-    start_date = st.date_input("Start Date", datetime(2024, 1, 1))
-    end_date = st.date_input("End Date", datetime(2024, 12, 31))
+    start_date = st.date_input("Start Date", date(2024, 1, 1))
+    end_date = st.date_input("End Date", date(2024, 12, 31))
 
     st.header("🛰️ Satellite")
     satellite = st.selectbox(
@@ -158,46 +157,13 @@ if roi:
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
                 attr="Google Earth Engine",
-                name=f"{satellite} {date_time}",
+                name=satellite,
                 overlay=True,
             ).add_to(folium_map)
 
             # Render the updated map inside the container with a unique key
             map_container.subheader(f"🛰️ Clipped Satellite Image (Frame {i + 1}) - Date: {date_time}")
             st_folium(folium_map, height=550, width="100%", key=f"map_frame_{i}")  # Unique key for each frame
-
+            
             # Wait for a short time to simulate video frames
             time.sleep(1)  # Adjust the time for desired frame rate
-
-            # Add checkboxes to allow users to select images they want to keep
-            selected = st.checkbox(f"Select Image {i + 1} ({date_time})", key=f"image_{i}")
-            if selected:
-                # Store the image object in session_state
-                st.session_state.selected_images.append(image)
-
-# ---------------- Selected Images ----------------
-if st.session_state.selected_images:
-    st.subheader("📥 Selected Images")
-
-    # Retrieve the selected images
-    selected_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
-    for image in st.session_state.selected_images:
-        # Visualization params
-        if satellite == "Sentinel-2":
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-        else:
-            vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
-
-        map_id = image.getMapId(vis)
-
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="Google Earth Engine",
-            name=f"Selected Image",
-            overlay=True,
-        ).add_to(selected_map)
-
-    # Render the selected images on the map
-    st_folium(selected_map, height=550, width="100%")
-else:
-    st.warning("No images selected.")
