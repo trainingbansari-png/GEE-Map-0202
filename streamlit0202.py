@@ -117,7 +117,10 @@ if roi:
     selected_image_collection = collection.filterDate(str(selected_date), str(selected_date))
 
     # Check if the collection for the selected date has any images
-    selected_image_count = selected_image_collection.size().getInfo()
+    selected_image_count = selected_image_collection.size()
+
+    # Ensure we handle empty collection gracefully
+    selected_image_count = selected_image_count.getInfo() if selected_image_count else 0
 
     # Check if there are images for the selected date and show first one if present
     if selected_image_count > 0:
