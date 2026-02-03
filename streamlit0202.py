@@ -119,28 +119,32 @@ if roi:
     # Check if the collection has any images for the selected date
     selected_image_count = selected_image_collection.size()
 
-    # Only proceed if there are images
-    if selected_image_count.getInfo() > 0:
-        # Get the first image from the filtered collection
-        image = selected_image_collection.first()
+    # Handle the case where the collection is empty
+    try:
+        selected_image_count_value = selected_image_count.getInfo()
+        if selected_image_count_value > 0:
+            # Get the first image from the filtered collection
+            image = selected_image_collection.first()
 
-        st.success(f"🖼️ Image Found for {selected_date}")
+            st.success(f"🖼️ Image Found for {selected_date}")
 
-        # Define visualization parameters
-        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-        map_id = image.getMapId(vis)
+            # Define visualization parameters
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+            map_id = image.getMapId(vis)
 
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="Google Earth Engine",
-            name=satellite,
-            overlay=True,
-        ).add_to(m)
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                name=satellite,
+                overlay=True,
+            ).add_to(m)
 
-        # Remove the rectangle from the map (as per your request)
-        folium.LayerControl().add_to(m)
+            # Remove the rectangle from the map (as per your request)
+            folium.LayerControl().add_to(m)
 
-        st.subheader("🛰️ Clipped Satellite Image")
-        st_folium(m, height=550, width="100%")
-    else:
-        st.warning(f"No images found for the selected date ({selected_date}). Please adjust the date range.")
+            st.subheader("🛰️ Clipped Satellite Image")
+            st_folium(m, height=550, width="100%")
+        else:
+            st.warning(f"No images found for the selected date ({selected_date}). Please adjust the date range.")
+    except Exception as e:
+        st.error(f"Error loading image: {str(e)}")
