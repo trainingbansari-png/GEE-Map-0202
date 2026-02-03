@@ -46,6 +46,9 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
+    # Start button to trigger filtering
+    start_button = st.button("Start")
+
 # ---------------- Map ----------------
 m = folium.Map(location=[22.0, 69.0], zoom_start=7)
 
@@ -98,7 +101,7 @@ if map_data["all_drawings"]:
     st.table(bounds_df)
 
 # ---------------- GEE PROCESSING ----------------
-if roi:
+if roi and start_button:
     collection_ids = {
         "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
         "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
@@ -115,54 +118,48 @@ if roi:
     total_image_count = collection.size().getInfo()
     st.success(f"🖼️ Total Images Found: {total_image_count}")
 
-    # Add image count slider with a dynamic maximum value based on total available images
-    image_count = st.slider(
-        "Number of Images to Show",
-        min_value=1,
-        max_value=total_image_count,
-        value=min(5, total_image_count),  # Default is 5, but ensure it's not higher than total count
-    )
+    # Get the images that fall within the selected date range
+    filtered_images = []
+    if total_image_count > 0:
+        image_list = collection.toList(total_image_count)
 
-    # Limit the collection to the selected image count
-    collection = collection.limit(image_count)
+        # Filter images based on date range
+        for i in range(total_image_count):
+            image = ee.Image(image_list.get(i))
+            timestamp = image.get("system:time_start").getInfo()
+            image_date = datetime.utcfromtimestamp(timestamp / 1000).date()
 
-    count = collection.size().getInfo()
-    st.success(f"🖼️ Images Displayed: {count}")
+            if start_date <= image_date <= end_date:
+                filtered_images.append(image)
 
-    if count > 0:
-        # Convert the collection to a list and process images
-        image_list = collection.toList(count)
+    filtered_count = len(filtered_images)
+    st.success(f"🖼️ Filtered Images Displayed: {filtered_count}")
 
-        # Create a new map to display all images
-        folium_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
+    # Create the folium map and display all filtered images
+    folium_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
 
-        # Display all images within the selected date range
-        for i in range(count):
-            image = ee.Image(image_list.get(i))  # Get each image from the list
-
-            # Get the timestamp (system:time_start) of the image
+    if filtered_count > 0:
+        for image in filtered_images:
             timestamp = image.get("system:time_start").getInfo()
             date_time = datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
-            # Check if the image date falls within the selected date range
-            if start_date <= datetime.utcfromtimestamp(timestamp / 1000).date() <= end_date:
-                
-                # Set visualization parameters for each satellite type
-                if satellite == "Sentinel-2":
-                    vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-                else:
-                    vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+            if satellite == "Sentinel-2":
+                vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+            else:
+                vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-                map_id = image.getMapId(vis)
+            map_id = image.getMapId(vis)
 
-                # Add each image as a tile layer to the folium map
-                folium.TileLayer(
-                    tiles=map_id["tile_fetcher"].url_format,
-                    attr="Google Earth Engine",
-                    name=f"{satellite} - {date_time}",
-                    overlay=True,
-                ).add_to(folium_map)
+            # Add each image as a tile layer to the folium map
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                name=f"{satellite} - {date_time}",
+                overlay=True,
+            ).add_to(folium_map)
 
         # Render the map with all images
         st.subheader("🛰️ All Clipped Satellite Images")
         st_folium(folium_map, height=550, width="100%")
+    else:
+        st.write("No images were found within the selected date range.")
