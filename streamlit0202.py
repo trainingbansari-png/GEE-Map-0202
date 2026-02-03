@@ -116,15 +116,19 @@ if roi:
     # Filter collection by the selected date
     selected_image_collection = collection.filterDate(str(selected_date), str(selected_date))
 
-    # Check if there are images for the selected date
-    if selected_image_collection.size().getInfo() > 0:
-        # If the collection is not empty, get the first image
-        image = selected_image_collection.first()
+    # Check if there are images for the selected date using Earth Engine's size() method
+    image_count = selected_image_collection.size()
 
-        st.success(f"🖼️ Image Found for {selected_date}")
+    # Wait for the result asynchronously
+    try:
+        count = image_count.getInfo()
+        if count > 0:
+            # If the collection is not empty, get the first image
+            image = selected_image_collection.first()
 
-        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-        try:
+            st.success(f"🖼️ Image Found for {selected_date}")
+
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
             map_id = image.getMapId(vis)
 
             folium.TileLayer(
@@ -139,7 +143,7 @@ if roi:
 
             st.subheader("🛰️ Clipped Satellite Image")
             st_folium(m, height=550, width="100%")
-        except Exception as e:
-            st.error(f"Error loading image: {e}")
-    else:
-        st.warning(f"No image found for {selected_date}")
+        else:
+            st.warning(f"No image found for {selected_date}")
+    except Exception as e:
+        st.error(f"Error: {e}")
