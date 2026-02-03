@@ -5,7 +5,7 @@ import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
-from datetime import date, datetime
+from datetime import date
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -113,25 +113,25 @@ if roi:
         .filterDate(str(start_date), str(end_date))
     )
 
-    # Filter collection by the selected date
+    # Check if the collection has images for the selected date
     selected_image_collection = collection.filterDate(str(selected_date), str(selected_date))
-
-    # Check if there are images for the selected date using Earth Engine's size() method
+    
+    # Get the collection size (number of images for the selected date)
     image_count = selected_image_collection.size()
 
-    # Wait for the result asynchronously
+    # Use try-except to handle cases where the collection size is 0
     try:
-        count = image_count.getInfo()  # Fetch size using .getInfo()
+        count = image_count.getInfo()  # This will return the number of images available for the selected date
         
-        # If there are no images for the selected date
         if count == 0:
             st.warning(f"No images found for {selected_date}. Try a different date.")
         else:
-            # If images exist, display the first image in the collection
+            # If images exist, display the first image
             image = selected_image_collection.first()
 
             st.success(f"🖼️ Image Found for {selected_date}")
 
+            # Adjust visualization parameters
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
             map_id = image.getMapId(vis)
 
