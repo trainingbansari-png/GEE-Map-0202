@@ -29,7 +29,7 @@ initialize_ee()
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
-    
+
     ul_lat = st.number_input("Upper-Left Latitude", value=st.session_state.ul_lat or 0.0)
     ul_lon = st.number_input("Upper-Left Longitude", value=st.session_state.ul_lon or 0.0)
     lr_lat = st.number_input("Lower-Right Latitude", value=st.session_state.lr_lat or 0.0)
@@ -45,8 +45,14 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
-    st.header("🌤️ Cloud Cover Threshold")
-    cloud_cover_threshold = st.slider("Max Cloud Cover (%)", min_value=0, max_value=100, value=20)
+    # Image count slider
+    st.header("🖼️ Select Image Count")
+    image_count = st.slider(
+        "Number of Images to Show",
+        min_value=1,
+        max_value=20,
+        value=5
+    )
 
 # ---------------- Map ----------------
 m = folium.Map(location=[22.0, 69.0], zoom_start=7)
@@ -110,33 +116,25 @@ if roi:
     collection = (
         ee.ImageCollection(collection_ids[satellite])
         .filterBounds(roi)
-        .filterDate(str(start_date), str(end_date))  # Filter based on start and end dates
+        .filterDate(str(start_date), str(end_date))
     )
 
-    # Eliminate images with cloud cover
-    if satellite == "Sentinel-2":
-        collection = collection.filter(ee.Filter.lt('system:cloud_coverage', cloud_cover_threshold))  # Adjust threshold dynamically
-    else:  # Landsat-8 and Landsat-9
-        collection = collection.filter(ee.Filter.lt('system:cloud_coverage', cloud_cover_threshold))  # Adjust threshold dynamically
+    # Limit number of images based on slider value
+    collection = collection.limit(image_count)
 
-    # Get the number of images in the filtered collection
-    num_images = collection.size().getInfo()
+    count = collection.size().getInfo()
+    st.success(f"🖼️ Images Found: {count}")
 
-    # Show debug info about the collection
-    st.write(f"Number of images in collection after filtering: {num_images}")
-    if num_images > 0:
-        st.success(f"Found {num_images} images after filtering out clouded ones.")
+    if count > 0:
+        for img in collection.toList(count):
+            image = ee.Image(img)
+            if satellite == "Sentinel-2":
+                vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+            else:
+                vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-        # Add slider for selecting image index (from 1 to num_images)
-        image_index = st.slider("Select Image", 1, num_images, 1)
+            map_id = image.getMapId(vis)
 
-        # Get the selected image from the collection
-        selected_image = ee.Image(collection.toList(num_images).get(image_index - 1))
-
-        # Visualization parameters
-        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-        try:
-            map_id = selected_image.getMapId(vis)
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
                 attr="Google Earth Engine",
@@ -144,9 +142,6 @@ if roi:
                 overlay=True,
             ).add_to(m)
 
-            st.subheader(f"🛰️ Clipped Satellite Image for Image {image_index}")
-            st_folium(m, height=550, width="100%")
-        except Exception as e:
-            st.error(f"Error loading image: {e}")
-    else:
-        st.warning("No images found after filtering. Please adjust the cloud cover or date filter.")
+        # Display the updated map
+        st.subheader("🛰️ Clipped Satellite Image")
+        st_folium(m, height=550, width="100%")
