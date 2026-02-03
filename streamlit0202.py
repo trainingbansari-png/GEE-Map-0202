@@ -116,6 +116,10 @@ if roi and start_button:
     # Get the total count of images
     total_image_count = collection.size().getInfo()
 
+    # Debugging: Check if collection is empty
+    if total_image_count == 0:
+        st.write("No images found within the selected area and date range.")
+    
     # Get the images that fall within the selected date range
     filtered_images = []
     if total_image_count > 0:
@@ -138,6 +142,7 @@ if roi and start_button:
             timestamp = image.get("system:time_start").getInfo()
             date_time = datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
+            # Visualization parameters for Sentinel-2 and Landsat
             if satellite == "Sentinel-2":
                 vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
             else:
@@ -157,4 +162,4 @@ if roi and start_button:
         st.subheader("🛰️ All Clipped Satellite Images")
         st_folium(folium_map, height=550, width="100%")
     else:
-        st.write("No images were found within the selected date range.")
+        st.write("No images found within the selected date range.")
