@@ -45,6 +45,9 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
+    st.header("🌤️ Cloud Cover Threshold")
+    cloud_cover_threshold = st.slider("Max Cloud Cover (%)", min_value=0, max_value=100, value=20)
+
 # ---------------- Map ----------------
 m = folium.Map(location=[22.0, 69.0], zoom_start=7)
 
@@ -110,15 +113,17 @@ if roi:
         .filterDate(str(start_date), str(end_date))  # Filter based on start and end dates
     )
 
-    # Eliminate images with cloud cover (Sentinel-2: 'SCL', Landsat: 'QA60')
+    # Eliminate images with cloud cover
     if satellite == "Sentinel-2":
-        collection = collection.filter(ee.Filter.lt('system:cloud_coverage', 20))  # Only images with < 20% cloud cover
+        collection = collection.filter(ee.Filter.lt('system:cloud_coverage', cloud_cover_threshold))  # Adjust threshold dynamically
     else:  # Landsat-8 and Landsat-9
-        collection = collection.filter(ee.Filter.lt('system:cloud_coverage', 20))  # Modify to the correct cloud filtering criteria
+        collection = collection.filter(ee.Filter.lt('system:cloud_coverage', cloud_cover_threshold))  # Adjust threshold dynamically
 
     # Get the number of images in the filtered collection
     num_images = collection.size().getInfo()
 
+    # Show debug info about the collection
+    st.write(f"Number of images in collection after filtering: {num_images}")
     if num_images > 0:
         st.success(f"Found {num_images} images after filtering out clouded ones.")
 
