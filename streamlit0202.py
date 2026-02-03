@@ -1,18 +1,17 @@
 import streamlit as st
 import ee
 import folium
-import pandas as pd
-from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
+import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
 st.title("🌍 Streamlit + Google Earth Engine")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "current_image_index"]:
     st.session_state.setdefault(k, None)
 
 # ---------------- EE Init ----------------
@@ -45,28 +44,16 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
-    # Image count slider
-    st.header("🖼️ Select Image Count")
+    # Default image count slider (1 to 10 images by default)
     image_count = st.slider(
-        "Number of Images to Show",
+        "Select the number of images to display",
         min_value=1,
-        max_value=20,
-        value=5
+        max_value=10,
+        value=5,  # Default is 5
     )
 
 # ---------------- Map ----------------
 m = folium.Map(location=[22.0, 69.0], zoom_start=7)
-
-Draw(
-    draw_options={
-        "polyline": False,
-        "polygon": False,
-        "circle": False,
-        "marker": False,
-        "circlemarker": False,
-        "rectangle": True,
-    }
-).add_to(m)
 
 # ---------------- Render Map ----------------
 map_data = st_folium(m, height=550, width="100%")
@@ -119,11 +106,10 @@ if roi:
         .filterDate(str(start_date), str(end_date))
     )
 
-    # Get the total count of images
     total_image_count = collection.size().getInfo()
     st.success(f"🖼️ Total Images Found: {total_image_count}")
 
-    # Limit the collection to the slider value
+    # Limit the collection to the slider value (default)
     collection = collection.limit(image_count)
 
     count = collection.size().getInfo()
@@ -132,10 +118,13 @@ if roi:
     if count > 0:
         # Convert the collection to a list and process images
         image_list = collection.toList(count)
-        
-        # Display the images on the map
-        for i in range(count):
-            image = ee.Image(image_list.get(i))  # Get each image from the list
+
+        # Initialize image index
+        if "current_image_index" not in st.session_state:
+            st.session_state.current_image_index = 0
+
+        def display_image(image_index):
+            image = ee.Image(image_list.get(image_index))  # Get each image from the list
             if satellite == "Sentinel-2":
                 vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
             else:
@@ -150,6 +139,12 @@ if roi:
                 overlay=True,
             ).add_to(m)
 
-        # Display the updated map
-        st.subheader("🛰️ Clipped Satellite Image")
-        st_folium(m, height=550, width="100%")
+            # Display the updated map
+            st.subheader(f"🛰️ Image {image_index + 1}")
+            st_folium(m, height=550, width="100%")
+
+        # Automatically display images one by one with a small delay
+        for i in range(count):
+            st.session_state.current_image_index = i
+            display_image(i)
+            time.sleep(3)  # Delay for 3 seconds between images
