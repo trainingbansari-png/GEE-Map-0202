@@ -14,8 +14,11 @@ st.set_page_config(layout="wide")
 st.title("🌍 Streamlit + Google Earth Engine")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "selected_images"]:
     st.session_state.setdefault(k, None)
+
+if "selected_images" not in st.session_state:
+    st.session_state.selected_images = []
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -157,13 +160,49 @@ if roi:
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
                 attr="Google Earth Engine",
-                name=satellite,
+                name=f"{satellite} {date_time}",
                 overlay=True,
             ).add_to(folium_map)
 
             # Render the updated map inside the container with a unique key
             map_container.subheader(f"🛰️ Clipped Satellite Image (Frame {i + 1}) - Date: {date_time}")
             st_folium(folium_map, height=550, width="100%", key=f"map_frame_{i}")  # Unique key for each frame
-            
+
             # Wait for a short time to simulate video frames
             time.sleep(1)  # Adjust the time for desired frame rate
+
+            # Add checkboxes to allow users to select images they want to keep
+            selected = st.checkbox(f"Select Image {i + 1} ({date_time})", key=f"image_{i}")
+            if selected:
+                st.session_state.selected_images.append(image)
+
+# ---------------- Selected Images ----------------
+if st.session_state.selected_images:
+    st.subheader("📥 Selected Images")
+
+    # Display selected images in the map
+    selected_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
+    for image in st.session_state.selected_images:
+        # Use the last image's date as a reference
+        timestamp = image.get("system:time_start").getInfo()
+        date_time = datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+        # Visualization params
+        if satellite == "Sentinel-2":
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+        else:
+            vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+
+        map_id = image.getMapId(vis)
+
+        folium.TileLayer(
+            tiles=map_id["tile_fetcher"].url_format,
+            attr="Google Earth Engine",
+            name=f"Selected {date_time}",
+            overlay=True,
+        ).add_to(selected_map)
+
+    # Render the selected images on the map
+    st_folium(selected_map, height=550, width="100%")
+else:
+    st.warning("No images selected.")
