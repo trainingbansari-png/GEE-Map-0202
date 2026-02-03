@@ -115,7 +115,6 @@ if roi and start_button:
 
     # Get the total count of images
     total_image_count = collection.size().getInfo()
-    st.success(f"🖼️ Total Images Found: {total_image_count}")
 
     # Get the images that fall within the selected date range
     filtered_images = []
@@ -131,13 +130,10 @@ if roi and start_button:
             if start_date <= image_date <= end_date:
                 filtered_images.append(image)
 
-    filtered_count = len(filtered_images)
-    st.success(f"🖼️ Filtered Images Displayed: {filtered_count}")
-
     # Create the folium map and display all filtered images
     folium_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
 
-    if filtered_count > 0:
+    if len(filtered_images) > 0:
         for image in filtered_images:
             timestamp = image.get("system:time_start").getInfo()
             date_time = datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
