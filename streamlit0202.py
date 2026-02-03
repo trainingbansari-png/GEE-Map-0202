@@ -45,9 +45,6 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
-    st.header("🗓️ Select Date for Image")
-    selected_date = st.date_input("Select Date", date(2024, 1, 5))
-
 # ---------------- Map ----------------
 m = folium.Map(location=[22.0, 69.0], zoom_start=7)
 
@@ -113,36 +110,42 @@ if roi:
         .filterDate(str(start_date), str(end_date))  # Filter based on start and end dates
     )
 
-    # Now, we filter for images based on the selected date
-    selected_image_collection = collection.filterDate(str(selected_date), str(selected_date))
-
-    # Check if the collection has any images for the selected date
-    try:
-        selected_image_count = selected_image_collection.size().getInfo()
+    # Check the number of images in the collection
+    image_list = collection.toList(collection.size())
+    num_images = collection.size().getInfo()
+    
+    if num_images > 0:
+        st.success(f"Found {num_images} images.")
         
-        if selected_image_count > 0:
-            # Get the first image from the filtered collection
-            image = selected_image_collection.first()
+        # Get image dates and list the images in the sidebar for selection
+        image_dates = []
+        for i in range(num_images):
+            image = ee.Image(image_list.get(i))
+            date = image.get("system:time_start").getInfo()
+            image_dates.append(date)
+        
+        image_dates_sorted = sorted(image_dates)
+        
+        st.sidebar.subheader("Available Image Dates")
+        selected_image_date = st.sidebar.selectbox("Select an image date", image_dates_sorted)
 
-            st.success(f"🖼️ Image Found for {selected_date}")
+        # Filter collection for the selected image date
+        selected_image = collection.filterDate(str(selected_image_date), str(selected_image_date)).first()
 
-            # Define visualization parameters
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-            map_id = image.getMapId(vis)
+        # Visualization parameters
+        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+        map_id = selected_image.getMapId(vis)
 
-            folium.TileLayer(
-                tiles=map_id["tile_fetcher"].url_format,
-                attr="Google Earth Engine",
-                name=satellite,
-                overlay=True,
-            ).add_to(m)
+        folium.TileLayer(
+            tiles=map_id["tile_fetcher"].url_format,
+            attr="Google Earth Engine",
+            name=satellite,
+            overlay=True,
+        ).add_to(m)
 
-            # Remove the rectangle from the map (as per your request)
-            folium.LayerControl().add_to(m)
+        st.subheader(f"🛰️ Clipped Satellite Image for {selected_image_date}")
+        st_folium(m, height=550, width="100%")
 
-            st.subheader("🛰️ Clipped Satellite Image")
-            st_folium(m, height=550, width="100%")
-        else:
-            st.warning(f"No images found for the selected date ({selected_date}). Please adjust the date range.")
-    except Exception as e:
-        st.error(f"Error loading image: {str(e)}")
+    else:
+        st.warning("No images found for the selected date range. Please adjust the date filter.")
+        
