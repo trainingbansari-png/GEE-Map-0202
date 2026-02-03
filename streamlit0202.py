@@ -5,8 +5,7 @@ import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
-from datetime import date
-import datetime
+from datetime import date, datetime
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -30,6 +29,7 @@ initialize_ee()
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
+    
     ul_lat = st.number_input("Upper-Left Latitude", value=st.session_state.ul_lat or 0.0)
     ul_lon = st.number_input("Upper-Left Longitude", value=st.session_state.ul_lon or 0.0)
     lr_lat = st.number_input("Lower-Right Latitude", value=st.session_state.lr_lat or 0.0)
@@ -48,7 +48,6 @@ with st.sidebar:
 # ---------------- Map ----------------
 m = folium.Map(location=[22.0, 69.0], zoom_start=7)
 
-# Add draw options for rectangle only
 Draw(
     draw_options={
         "polyline": False,
@@ -97,7 +96,7 @@ if map_data["all_drawings"]:
     st.subheader("⬛ Drawn Rectangle Bounds")
     st.table(bounds_df)
 
-# ---------------- GEE Processing ----------------
+# ---------------- GEE PROCESSING ----------------
 if roi:
     collection_ids = {
         "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
@@ -111,63 +110,59 @@ if roi:
         .filterDate(str(start_date), str(end_date))
     )
 
-    # Sort by timestamp
-    sorted_collection = collection.sort("system:time_start")
-    
-    # Get all the image dates in the collection
-    image_dates = sorted_collection.aggregate_array("system:time_start").getInfo()
+    count = collection.size().getInfo()
+    st.success(f"🖼️ Images Found: {count}")
 
-    # Convert timestamps to datetime objects
-    image_dates = [datetime.datetime.utcfromtimestamp(date / 1000) for date in image_dates]
+    if count > 0:
+        image_list = collection.toList(count)
 
-    # Display the list of image dates
-    st.subheader("🕒 Image Dates:")
-    for date_time in image_dates:
-        st.write(f"🕒 Image Time: {date_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        # Create an empty list to store formatted image timestamps
+        image_dates = []
 
-    # Create an interactive slider to select images by date
-    image_index = st.slider(
-        "Select Image Date",
-        min_value=0,
-        max_value=len(image_dates) - 1,
-        value=0,
-        step=1,
-        format="Image Time: %Y-%m-%d %H:%M:%S"
-    )
+        # Extract image dates and store in the list
+        for i in range(count):
+            image = ee.Image(image_list.get(i))
+            timestamp = image.get('system:time_start').getInfo()  # Get timestamp
+            if timestamp:
+                image_date = datetime.utcfromtimestamp(timestamp / 1000)  # Convert to UTC datetime
+                image_dates.append(image_date)
+            else:
+                image_dates.append(None)
 
-    selected_image_date = image_dates[image_index]
-    st.write(f"🕒 Selected Image Time: {selected_image_date.strftime('%Y-%m-%d %H:%M:%S')}")
+        # Debug: Check the image timestamps
+        for img_date in image_dates:
+            st.write(f"Image Time: {img_date}")  # Debugging print
 
-    # Retrieve the selected image from the collection
-    selected_image = sorted_collection.filterDate(
-        selected_image_date.isoformat(), 
-        (selected_image_date + datetime.timedelta(minutes=1)).isoformat()
-    ).first()
+        # Show image based on user selection (animation-like behavior)
+        selected_index = st.slider("Select Image", 0, count - 1, 0)
+        selected_image_date = image_dates[selected_index]
 
-    if selected_image:
-        # Choose appropriate visualization for the selected image
-        if satellite == "Sentinel-2":
+        if selected_image_date:
+            st.write(f"🕒 Selected Image Time: {selected_image_date.strftime('%Y-%m-%d %H:%M:%S')}")
+
+            # Display the selected image on the map
+            image = ee.Image(image_list.get(selected_index))
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+            map_id = image.getMapId(vis)
+
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                name=satellite,
+                overlay=True,
+            ).add_to(m)
+
+            folium.Rectangle(
+                bounds=[
+                    [st.session_state.lr_lat, st.session_state.ul_lon],
+                    [st.session_state.ul_lat, st.session_state.lr_lon],
+                ],
+                color="red",
+                fill=False,
+            ).add_to(m)
+
+            st.subheader("🛰️ Clipped Satellite Image")
+            st_folium(m, height=550, width="100%")
+
         else:
-            vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
-
-        map_id = selected_image.getMapId(vis)
-
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="Google Earth Engine",
-            name=satellite,
-            overlay=True,
-        ).add_to(m)
-
-        folium.Rectangle(
-            bounds=[
-                [st.session_state.lr_lat, st.session_state.ul_lon],
-                [st.session_state.ul_lat, st.session_state.lr_lon],
-            ],
-            color="red",
-            fill=False,
-        ).add_to(m)
-
-        st.subheader("🛰️ Selected Satellite Image")
-        st_folium(m, height=550, width="100%")
+            st.warning("Selected image has no valid timestamp.")
