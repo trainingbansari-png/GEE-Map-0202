@@ -148,8 +148,11 @@ if roi:
             timestamp = image.get("system:time_start").getInfo()
             date_time = datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
+            # Convert the timestamp to a datetime object
+            image_date = datetime.utcfromtimestamp(timestamp / 1000).date()
+
             # Check if the image date falls within the selected date range
-            if start_date <= datetime.utcfromtimestamp(timestamp / 1000).date() <= end_date:
+            if start_date <= image_date <= end_date:
                 
                 # Set visualization parameters for each satellite type
                 if satellite == "Sentinel-2":
