@@ -116,13 +116,12 @@ if roi:
     # Now, we filter for images based on the selected date
     selected_image_collection = collection.filterDate(str(selected_date), str(selected_date))
 
-    # Use .size() to check if the collection has images, and process only if it's non-zero
-    selected_image_count = selected_image_collection.size().getInfo()
+    # Check if the collection has any images for the selected date
+    selected_image_count = selected_image_collection.size()
 
-    if selected_image_count == 0:
-        st.warning(f"No images found for {selected_date}. Please select another date.")
-    else:
-        # Proceed to get the first image from the collection
+    # Only proceed if there are images
+    if selected_image_count.getInfo() > 0:
+        # Get the first image from the filtered collection
         image = selected_image_collection.first()
 
         st.success(f"🖼️ Image Found for {selected_date}")
@@ -143,3 +142,5 @@ if roi:
 
         st.subheader("🛰️ Clipped Satellite Image")
         st_folium(m, height=550, width="100%")
+    else:
+        st.warning(f"No images found for the selected date ({selected_date}). Please adjust the date range.")
