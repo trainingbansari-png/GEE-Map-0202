@@ -6,6 +6,7 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
+import datetime
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -121,11 +122,16 @@ if roi:
         image_dates = []
         for i in range(num_images):
             image = ee.Image(image_list.get(i))
-            date = image.get("system:time_start").getInfo()
-            image_dates.append(date)
+            # Get the image date (system:time_start is in milliseconds since 1970)
+            timestamp = image.get("system:time_start").getInfo()
+            # Convert timestamp to a human-readable date format
+            image_date = datetime.datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d')
+            image_dates.append(image_date)
         
+        # Sort image dates
         image_dates_sorted = sorted(image_dates)
         
+        # Show image dates in sidebar
         st.sidebar.subheader("Available Image Dates")
         selected_image_date = st.sidebar.selectbox("Select an image date", image_dates_sorted)
 
