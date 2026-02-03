@@ -114,12 +114,13 @@ if roi:
     )
 
     # Filter collection by the selected date
-    image = (
-        collection.filterDate(str(selected_date), str(selected_date))
-        .first()  # Get the first image from that date (if available)
-    )
+    selected_image_collection = collection.filterDate(str(selected_date), str(selected_date))
 
-    if image:
+    # Check if there are images for the selected date
+    if selected_image_collection.size().getInfo() > 0:
+        # If the collection is not empty, get the first image
+        image = selected_image_collection.first()
+
         st.success(f"🖼️ Image Found for {selected_date}")
 
         vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
