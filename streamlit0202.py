@@ -115,35 +115,31 @@ if roi:
 
     # Now, we filter for images based on the selected date
     selected_image_collection = collection.filterDate(str(selected_date), str(selected_date))
-    
+
     # Check if the collection for the selected date has any images
     selected_image_count = selected_image_collection.size().getInfo()
 
-    # Use try-except to handle empty collections or other errors
-    try:
-        if selected_image_count > 0:
-            # If images exist for the selected date, show the first one
-            image = selected_image_collection.first()
+    # Check if there are images for the selected date and show first one if present
+    if selected_image_count > 0:
+        image = selected_image_collection.first()
 
-            st.success(f"🖼️ Image Found for {selected_date}")
+        st.success(f"🖼️ Image Found for {selected_date}")
 
-            # Define visualization parameters
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-            map_id = image.getMapId(vis)
+        # Define visualization parameters
+        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+        map_id = image.getMapId(vis)
 
-            folium.TileLayer(
-                tiles=map_id["tile_fetcher"].url_format,
-                attr="Google Earth Engine",
-                name=satellite,
-                overlay=True,
-            ).add_to(m)
+        folium.TileLayer(
+            tiles=map_id["tile_fetcher"].url_format,
+            attr="Google Earth Engine",
+            name=satellite,
+            overlay=True,
+        ).add_to(m)
 
-            # Remove the rectangle from the map (as per your request)
-            folium.LayerControl().add_to(m)
+        # Remove the rectangle from the map (as per your request)
+        folium.LayerControl().add_to(m)
 
-            st.subheader("🛰️ Clipped Satellite Image")
-            st_folium(m, height=550, width="100%")
-        else:
-            st.warning(f"No images found for {selected_date}. Please select another date.")
-    except Exception as e:
-        st.error(f"Error: {e}")
+        st.subheader("🛰️ Clipped Satellite Image")
+        st_folium(m, height=550, width="100%")
+    else:
+        st.warning(f"No images found for {selected_date}. Please select another date.")
