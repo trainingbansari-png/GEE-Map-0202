@@ -114,24 +114,21 @@ if roi:
     st.success(f"🖼️ Images Found: {count}")
 
     if count > 0:
+        # Create an empty list to store images and timestamps
         image_list = collection.toList(count)
-
-        # Create an empty list to store formatted image timestamps
         image_dates = []
 
         # Extract image dates and store in the list
         for i in range(count):
             image = ee.Image(image_list.get(i))
             timestamp = image.get('system:time_start').getInfo()  # Get timestamp
-            if timestamp:
-                image_date = datetime.utcfromtimestamp(timestamp / 1000)  # Convert to UTC datetime
-                image_dates.append(image_date)
-            else:
-                image_dates.append(None)
+            image_date = datetime.utcfromtimestamp(timestamp / 1000)  # Convert to UTC datetime
+            image_dates.append(image_date)
 
-        # Debug: Check the image timestamps
+        # Display timestamps for debugging
+        st.write("Available Image Dates:")
         for img_date in image_dates:
-            st.write(f"Image Time: {img_date}")  # Debugging print
+            st.write(img_date.strftime('%Y-%m-%d %H:%M:%S'))
 
         # Show image based on user selection (slider for animation-like behavior)
         selected_index = st.slider("Select Image", 0, count - 1, 0)
@@ -152,11 +149,8 @@ if roi:
                 overlay=True,
             ).add_to(m)
 
-            # Remove rectangle from the map
-            # (No rectangle box will be shown on the map anymore)
+            # Remove the rectangle from the map
+            folium.LayerControl().add_to(m)  # Optional: Add layer control for toggling layers
 
             st.subheader("🛰️ Clipped Satellite Image")
             st_folium(m, height=550, width="100%")
-
-        else:
-            st.warning("Selected image has no valid timestamp.")
