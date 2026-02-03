@@ -133,7 +133,7 @@ if roi:
         for img_date in image_dates:
             st.write(f"Image Time: {img_date}")  # Debugging print
 
-        # Show image based on user selection (animation-like behavior)
+        # Show image based on user selection (slider for animation-like behavior)
         selected_index = st.slider("Select Image", 0, count - 1, 0)
         selected_image_date = image_dates[selected_index]
 
