@@ -145,7 +145,12 @@ if roi:
     ).first()
 
     if selected_image:
-        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+        # Choose appropriate visualization for the selected image
+        if satellite == "Sentinel-2":
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+        else:
+            vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+
         map_id = selected_image.getMapId(vis)
 
         folium.TileLayer(
@@ -166,15 +171,3 @@ if roi:
 
         st.subheader("🛰️ Selected Satellite Image")
         st_folium(m, height=550, width="100%")
-
-        # Analyze changes over time (example: calculating NDVI difference or other metrics)
-        if selected_image:
-            ndvi = selected_image.normalizedDifference(['B4', 'B3']).rename("NDVI")
-            ndvi_value = ndvi.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=roi,
-                scale=30,
-                maxPixels=1e8
-            ).getInfo()
-
-            st.write("📊 NDVI Value:", ndvi_value)
