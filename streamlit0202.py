@@ -133,10 +133,10 @@ if roi:
         # Convert the collection to a list and process images
         image_list = collection.toList(count)
 
-        # Create an empty container for dynamic updates
-        map_container = st.empty()
+        # Create a new map to display all images
+        folium_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
 
-        # Display the images on the map one by one like video frames
+        # Display all images within the selected date range
         for i in range(count):
             image = ee.Image(image_list.get(i))  # Get each image from the list
 
@@ -155,18 +155,14 @@ if roi:
 
                 map_id = image.getMapId(vis)
 
-                # Create a new map for each frame and overwrite the previous map
-                folium_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
+                # Add each image as a tile layer to the folium map
                 folium.TileLayer(
                     tiles=map_id["tile_fetcher"].url_format,
                     attr="Google Earth Engine",
-                    name=satellite,
+                    name=f"{satellite} - {date_time}",
                     overlay=True,
                 ).add_to(folium_map)
 
-                # Render the updated map inside the container with a unique key
-                map_container.subheader(f"🛰️ Clipped Satellite Image (Frame {i + 1}) - Date: {date_time}")
-                st_folium(folium_map, height=550, width="100%", key=f"map_frame_{i}")  # Unique key for each frame
-                
-                # Wait for a short time to simulate video frames
-                time.sleep(1)  # Adjust the time for desired frame rate
+        # Render the map with all images
+        st.subheader("🛰️ All Clipped Satellite Images")
+        st_folium(folium_map, height=550, width="100%")
