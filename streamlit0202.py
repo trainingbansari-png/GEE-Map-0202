@@ -174,18 +174,18 @@ if roi:
             # Add checkboxes to allow users to select images they want to keep
             selected = st.checkbox(f"Select Image {i + 1} ({date_time})", key=f"image_{i}")
             if selected:
-                st.session_state.selected_images.append(image)
+                # Store the image's timestamp (or other metadata) instead of the whole object
+                st.session_state.selected_images.append(image.get("system:time_start").getInfo())
 
 # ---------------- Selected Images ----------------
 if st.session_state.selected_images:
     st.subheader("📥 Selected Images")
 
-    # Display selected images in the map
+    # Retrieve the selected images based on timestamps
     selected_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
-    for image in st.session_state.selected_images:
-        # Use the last image's date as a reference
-        timestamp = image.get("system:time_start").getInfo()
-        date_time = datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
+    for timestamp in st.session_state.selected_images:
+        # Retrieve the image by timestamp (this can be optimized as needed)
+        selected_image = ee.Image(collection.filter(ee.Filter.eq("system:time_start", timestamp)).first())
 
         # Visualization params
         if satellite == "Sentinel-2":
@@ -193,12 +193,12 @@ if st.session_state.selected_images:
         else:
             vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-        map_id = image.getMapId(vis)
+        map_id = selected_image.getMapId(vis)
 
         folium.TileLayer(
             tiles=map_id["tile_fetcher"].url_format,
             attr="Google Earth Engine",
-            name=f"Selected {date_time}",
+            name=f"Selected Image {timestamp}",
             overlay=True,
         ).add_to(selected_map)
 
