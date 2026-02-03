@@ -111,53 +111,32 @@ if roi:
         .filterDate(str(start_date), str(end_date))  # Filter based on start and end dates
     )
 
-    # Check the number of images in the collection
-    image_list = collection.toList(collection.size())
+    # Get the number of images in the collection
     num_images = collection.size().getInfo()
-    
+
     if num_images > 0:
         st.success(f"Found {num_images} images.")
-        
-        # Get image dates and list the images in the sidebar for selection
-        image_dates = []
-        for i in range(num_images):
-            image = ee.Image(image_list.get(i))
-            # Get the image date (system:time_start is in milliseconds since 1970)
-            timestamp = image.get("system:time_start").getInfo()
-            # Convert timestamp to a human-readable date format
-            image_date = datetime.datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d')
-            image_dates.append(image_date)
-        
-        # Sort image dates
-        image_dates_sorted = sorted(image_dates)
-        
-        # Show image dates in sidebar
-        st.sidebar.subheader("Available Image Dates")
-        selected_image_date = st.sidebar.selectbox("Select an image date", image_dates_sorted)
 
-        # Filter collection for the selected image date
-        selected_image = collection.filterDate(str(selected_image_date), str(selected_image_date)).first()
+        # Add slider for selecting image index (from 1 to num_images)
+        image_index = st.slider("Select Image", 1, num_images, 1)
 
-        # Check if selected image exists
-        if selected_image:
-            st.write(f"Selected Image Date: {selected_image_date}")
-            
-            # Visualization parameters
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-            try:
-                map_id = selected_image.getMapId(vis)
-                folium.TileLayer(
-                    tiles=map_id["tile_fetcher"].url_format,
-                    attr="Google Earth Engine",
-                    name=satellite,
-                    overlay=True,
-                ).add_to(m)
+        # Get the selected image from the collection
+        selected_image = ee.Image(collection.toList(num_images).get(image_index - 1))
 
-                st.subheader(f"🛰️ Clipped Satellite Image for {selected_image_date}")
-                st_folium(m, height=550, width="100%")
-            except Exception as e:
-                st.error(f"Error loading image: {e}")
-        else:
-            st.warning("No image found for the selected date.")
+        # Visualization parameters
+        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+        try:
+            map_id = selected_image.getMapId(vis)
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                name=satellite,
+                overlay=True,
+            ).add_to(m)
+
+            st.subheader(f"🛰️ Clipped Satellite Image for Image {image_index}")
+            st_folium(m, height=550, width="100%")
+        except Exception as e:
+            st.error(f"Error loading image: {e}")
     else:
         st.warning("No images found for the selected date range. Please adjust the date filter.")
