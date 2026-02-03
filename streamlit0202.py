@@ -45,15 +45,6 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
-    # Image count slider
-    st.header("🖼️ Select Image Count")
-    image_count = st.slider(
-        "Number of Images to Show",
-        min_value=1,
-        max_value=20,
-        value=5
-    )
-
 # ---------------- Map ----------------
 m = folium.Map(location=[22.0, 69.0], zoom_start=7)
 
@@ -104,6 +95,7 @@ if map_data["all_drawings"]:
 
     st.subheader("⬛ Drawn Rectangle Bounds")
     st.table(bounds_df)
+
 # ---------------- GEE PROCESSING ----------------
 if roi:
     collection_ids = {
@@ -122,7 +114,15 @@ if roi:
     total_image_count = collection.size().getInfo()
     st.success(f"🖼️ Total Images Found: {total_image_count}")
 
-    # Limit the collection to the slider value
+    # Add image count slider with a dynamic maximum value based on total available images
+    image_count = st.slider(
+        "Number of Images to Show",
+        min_value=1,
+        max_value=total_image_count,
+        value=min(5, total_image_count),  # Default is 5, but ensure it's not higher than total count
+    )
+
+    # Limit the collection to the selected image count
     collection = collection.limit(image_count)
 
     count = collection.size().getInfo()
@@ -131,7 +131,7 @@ if roi:
     if count > 0:
         # Convert the collection to a list and process images
         image_list = collection.toList(count)
-        
+
         # Display the images on the map
         for i in range(count):
             image = ee.Image(image_list.get(i))  # Get each image from the list
@@ -152,3 +152,4 @@ if roi:
         # Display the updated map
         st.subheader("🛰️ Clipped Satellite Image")
         st_folium(m, height=550, width="100%")
+        
