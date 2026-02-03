@@ -6,6 +6,7 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
+import datetime
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -29,8 +30,6 @@ initialize_ee()
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
-    
-    # Use session state values if set, else use default values
     ul_lat = st.number_input("Upper-Left Latitude", value=st.session_state.ul_lat or 0.0)
     ul_lon = st.number_input("Upper-Left Longitude", value=st.session_state.ul_lon or 0.0)
     lr_lat = st.number_input("Lower-Right Latitude", value=st.session_state.lr_lat or 0.0)
@@ -67,56 +66,36 @@ map_data = st_folium(m, height=550, width="100%")
 # ---------------- Rectangle Handling ----------------
 roi = None
 
-# Ensure session state variables are valid before proceeding
-if "ul_lat" in st.session_state and "ul_lon" in st.session_state and \
-    "lr_lat" in st.session_state and "lr_lon" in st.session_state:
-    
-    # Check if a rectangle was drawn
-    if map_data["all_drawings"]:
-        geom = map_data["all_drawings"][-1]["geometry"]
-        coords = geom["coordinates"][0]
+if map_data["all_drawings"]:
+    geom = map_data["all_drawings"][-1]["geometry"]
+    coords = geom["coordinates"][0]
 
-        # Extract latitudes and longitudes from the drawn rectangle
-        lats = [c[1] for c in coords]
-        lons = [c[0] for c in coords]
+    lats = [c[1] for c in coords]
+    lons = [c[0] for c in coords]
 
-        # Update session state with the new coordinates
-        st.session_state.ul_lat = max(lats)
-        st.session_state.ul_lon = min(lons)
-        st.session_state.lr_lat = min(lats)
-        st.session_state.lr_lon = max(lons)
+    st.session_state.ul_lat = max(lats)
+    st.session_state.ul_lon = min(lons)
+    st.session_state.lr_lat = min(lats)
+    st.session_state.lr_lon = max(lons)
 
-        # Define the rectangle geometry for GEE processing
-        roi = ee.Geometry.Rectangle(
-            [
-                st.session_state.ul_lon,
-                st.session_state.lr_lat,
-                st.session_state.lr_lon,
-                st.session_state.ul_lat,
-            ]
-        )
+    roi = ee.Geometry.Rectangle(
+        [
+            st.session_state.ul_lon,
+            st.session_state.lr_lat,
+            st.session_state.lr_lon,
+            st.session_state.ul_lat,
+        ]
+    )
 
-        # Ensure session state values are valid before constructing the DataFrame
-        if (st.session_state.ul_lat is not None and st.session_state.ul_lon is not None and 
-            st.session_state.lr_lat is not None and st.session_state.lr_lon is not None):
-            
-            # Create DataFrame for the rectangle bounds
-            bounds_df = pd.DataFrame([{
-                "Upper-Left Lat": st.session_state.ul_lat,
-                "Upper-Left Lon": st.session_state.ul_lon,
-                "Lower-Right Lat": st.session_state.lr_lat,
-                "Lower-Right Lon": st.session_state.lr_lon,
-            }])
+    bounds_df = pd.DataFrame([{
+        "Upper-Left Lat": st.session_state.ul_lat,
+        "Upper-Left Lon": st.session_state.ul_lon,
+        "Lower-Right Lat": st.session_state.lr_lat,
+        "Lower-Right Lon": st.session_state.lr_lon,
+    }])
 
-            # Display the bounds in the Streamlit app
-            st.subheader("⬛ Drawn Rectangle Bounds")
-            st.table(bounds_df)
-        else:
-            st.warning("Some values are missing in session state. Ensure that rectangle coordinates are drawn properly.")
-    else:
-        st.warning("No rectangle drawn yet.")
-else:
-    st.warning("Session state values are not set. Please draw a rectangle first.")
+    st.subheader("⬛ Drawn Rectangle Bounds")
+    st.table(bounds_df)
 
 # ---------------- GEE Processing ----------------
 if roi:
@@ -132,20 +111,43 @@ if roi:
         .filterDate(str(start_date), str(end_date))
     )
 
-    count = collection.size().getInfo()
-    st.success(f"🖼️ Images Found: {count}")
+    # Sort by timestamp
+    sorted_collection = collection.sort("system:time_start")
+    
+    # Get all the image dates in the collection
+    image_dates = sorted_collection.aggregate_array("system:time_start").getInfo()
 
-    if count > 0:
-        image = collection.median().clip(roi)
+    # Convert timestamps to datetime objects
+    image_dates = [datetime.datetime.utcfromtimestamp(date / 1000) for date in image_dates]
 
-        if satellite == "Sentinel-2":
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-        else:
-            vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+    # Display the list of image dates
+    st.subheader("🕒 Image Dates:")
+    for date_time in image_dates:
+        st.write(f"🕒 Image Time: {date_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        map_id = image.getMapId(vis)
+    # Create an interactive slider to select images by date
+    image_index = st.slider(
+        "Select Image Date",
+        min_value=0,
+        max_value=len(image_dates) - 1,
+        value=0,
+        step=1,
+        format="Image Time: %Y-%m-%d %H:%M:%S"
+    )
 
-        # Add the satellite image to the map
+    selected_image_date = image_dates[image_index]
+    st.write(f"🕒 Selected Image Time: {selected_image_date.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # Retrieve the selected image from the collection
+    selected_image = sorted_collection.filterDate(
+        selected_image_date.isoformat(), 
+        (selected_image_date + datetime.timedelta(minutes=1)).isoformat()
+    ).first()
+
+    if selected_image:
+        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+        map_id = selected_image.getMapId(vis)
+
         folium.TileLayer(
             tiles=map_id["tile_fetcher"].url_format,
             attr="Google Earth Engine",
@@ -153,7 +155,6 @@ if roi:
             overlay=True,
         ).add_to(m)
 
-        # Draw rectangle boundary on the map
         folium.Rectangle(
             bounds=[
                 [st.session_state.lr_lat, st.session_state.ul_lon],
@@ -163,5 +164,17 @@ if roi:
             fill=False,
         ).add_to(m)
 
-        st.subheader("🛰️ Clipped Satellite Image")
+        st.subheader("🛰️ Selected Satellite Image")
         st_folium(m, height=550, width="100%")
+
+        # Analyze changes over time (example: calculating NDVI difference or other metrics)
+        if selected_image:
+            ndvi = selected_image.normalizedDifference(['B4', 'B3']).rename("NDVI")
+            ndvi_value = ndvi.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=roi,
+                scale=30,
+                maxPixels=1e8
+            ).getInfo()
+
+            st.write("📊 NDVI Value:", ndvi_value)
