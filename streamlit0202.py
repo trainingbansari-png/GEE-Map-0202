@@ -31,7 +31,6 @@ initialize_ee()
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
-
     ul_lat = st.number_input("Upper-Left Latitude", value=st.session_state.ul_lat or 0.0)
     ul_lon = st.number_input("Upper-Left Longitude", value=st.session_state.ul_lon or 0.0)
     lr_lat = st.number_input("Lower-Right Latitude", value=st.session_state.lr_lat or 0.0)
@@ -145,25 +144,29 @@ if roi:
             timestamp = image.get("system:time_start").getInfo()
             date_time = datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
-            if satellite == "Sentinel-2":
-                vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-            else:
-                vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+            # Check if the image date falls within the selected date range
+            if start_date <= datetime.utcfromtimestamp(timestamp / 1000).date() <= end_date:
+                
+                # Set visualization parameters for each satellite type
+                if satellite == "Sentinel-2":
+                    vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+                else:
+                    vis = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-            map_id = image.getMapId(vis)
+                map_id = image.getMapId(vis)
 
-            # Create a new map for each frame and overwrite the previous map
-            folium_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
-            folium.TileLayer(
-                tiles=map_id["tile_fetcher"].url_format,
-                attr="Google Earth Engine",
-                name=satellite,
-                overlay=True,
-            ).add_to(folium_map)
+                # Create a new map for each frame and overwrite the previous map
+                folium_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
+                folium.TileLayer(
+                    tiles=map_id["tile_fetcher"].url_format,
+                    attr="Google Earth Engine",
+                    name=satellite,
+                    overlay=True,
+                ).add_to(folium_map)
 
-            # Render the updated map inside the container with a unique key
-            map_container.subheader(f"🛰️ Clipped Satellite Image (Frame {i + 1}) - Date: {date_time}")
-            st_folium(folium_map, height=550, width="100%", key=f"map_frame_{i}")  # Unique key for each frame
-            
-            # Wait for a short time to simulate video frames
-            time.sleep(1)  # Adjust the time for desired frame rate
+                # Render the updated map inside the container with a unique key
+                map_container.subheader(f"🛰️ Clipped Satellite Image (Frame {i + 1}) - Date: {date_time}")
+                st_folium(folium_map, height=550, width="100%", key=f"map_frame_{i}")  # Unique key for each frame
+                
+                # Wait for a short time to simulate video frames
+                time.sleep(1)  # Adjust the time for desired frame rate
