@@ -6,7 +6,6 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
-import time
 from datetime import datetime
 
 # ---------------- Page Config ----------------
