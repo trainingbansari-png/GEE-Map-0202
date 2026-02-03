@@ -45,6 +45,9 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
+    st.header("🗓️ Select Date for Image")
+    selected_date = st.date_input("Select Date", date(2024, 1, 5))
+
 # ---------------- Map ----------------
 m = folium.Map(location=[22.0, 69.0], zoom_start=7)
 
@@ -110,47 +113,29 @@ if roi:
         .filterDate(str(start_date), str(end_date))
     )
 
-    count = collection.size().getInfo()
-    st.success(f"🖼️ Images Found: {count}")
+    # Filter collection by the selected date
+    image = (
+        collection.filterDate(str(selected_date), str(selected_date))
+        .first()  # Get the first image from that date (if available)
+    )
 
-    if count > 0:
-        # Create an empty list to store images and timestamps
-        image_list = collection.toList(count)
-        image_dates = []
+    if image:
+        st.success(f"🖼️ Image Found for {selected_date}")
+        
+        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+        map_id = image.getMapId(vis)
 
-        # Extract image dates and store in the list
-        for i in range(count):
-            image = ee.Image(image_list.get(i))
-            timestamp = image.get('system:time_start').getInfo()  # Get timestamp
-            image_date = datetime.utcfromtimestamp(timestamp / 1000)  # Convert to UTC datetime
-            image_dates.append(image_date)
+        folium.TileLayer(
+            tiles=map_id["tile_fetcher"].url_format,
+            attr="Google Earth Engine",
+            name=satellite,
+            overlay=True,
+        ).add_to(m)
 
-        # Display timestamps for debugging
-        st.write("Available Image Dates:")
-        for img_date in image_dates:
-            st.write(img_date.strftime('%Y-%m-%d %H:%M:%S'))
+        # Remove the rectangle from the map
+        folium.LayerControl().add_to(m)
 
-        # Show image based on user selection (slider for animation-like behavior)
-        selected_index = st.slider("Select Image", 0, count - 1, 0)
-        selected_image_date = image_dates[selected_index]
-
-        if selected_image_date:
-            st.write(f"🕒 Selected Image Time: {selected_image_date.strftime('%Y-%m-%d %H:%M:%S')}")
-
-            # Display the selected image on the map
-            image = ee.Image(image_list.get(selected_index))
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-            map_id = image.getMapId(vis)
-
-            folium.TileLayer(
-                tiles=map_id["tile_fetcher"].url_format,
-                attr="Google Earth Engine",
-                name=satellite,
-                overlay=True,
-            ).add_to(m)
-
-            # Remove the rectangle from the map
-            folium.LayerControl().add_to(m)  # Optional: Add layer control for toggling layers
-
-            st.subheader("🛰️ Clipped Satellite Image")
-            st_folium(m, height=550, width="100%")
+        st.subheader("🛰️ Clipped Satellite Image")
+        st_folium(m, height=550, width="100%")
+    else:
+        st.warning(f"No image found for {selected_date}")
