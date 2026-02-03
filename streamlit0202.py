@@ -6,6 +6,7 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
+import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide")
@@ -132,7 +133,10 @@ if roi:
         # Convert the collection to a list and process images
         image_list = collection.toList(count)
 
-        # Display the images on the map
+        # Create an empty container for dynamic updates
+        map_container = st.empty()
+
+        # Display the images on the map one by one like video frames
         for i in range(count):
             image = ee.Image(image_list.get(i))  # Get each image from the list
             if satellite == "Sentinel-2":
@@ -142,14 +146,18 @@ if roi:
 
             map_id = image.getMapId(vis)
 
+            # Create a new map for each frame and overwrite the previous map
+            folium_map = folium.Map(location=[22.0, 69.0], zoom_start=7)
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
                 attr="Google Earth Engine",
                 name=satellite,
                 overlay=True,
-            ).add_to(m)
+            ).add_to(folium_map)
 
-        # Display the updated map
-        st.subheader("🛰️ Clipped Satellite Image")
-        st_folium(m, height=550, width="100%")
-        
+            # Render the updated map inside the container
+            map_container.subheader(f"🛰️ Clipped Satellite Image (Frame {i + 1})")
+            st_folium(folium_map, height=550, width="100%")
+            
+            # Wait for a short time to simulate video frames
+            time.sleep(1)  # Adjust the time for desired frame rate
