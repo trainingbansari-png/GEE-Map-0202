@@ -61,7 +61,7 @@ Draw(
 ).add_to(m)
 
 # ---------------- Render Map ----------------
-map_data = st_folium(m, height=550, width="100%")
+map_data = st_folium(m, height=550, width="100%", key="initial_map")
 
 # ---------------- Rectangle Handling ----------------
 roi = None
@@ -155,9 +155,9 @@ if roi:
                 overlay=True,
             ).add_to(folium_map)
 
-            # Render the updated map inside the container
+            # Render the updated map inside the container with a unique key
             map_container.subheader(f"🛰️ Clipped Satellite Image (Frame {i + 1})")
-            st_folium(folium_map, height=550, width="100%")
+            st_folium(folium_map, height=550, width="100%", key=f"map_frame_{i}")  # Unique key for each frame
             
             # Wait for a short time to simulate video frames
             time.sleep(1)  # Adjust the time for desired frame rate
