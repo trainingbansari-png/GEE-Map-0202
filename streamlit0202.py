@@ -129,10 +129,6 @@ if roi:
     count = collection.size().getInfo()
     st.success(f"🖼️ Images Displayed: {count}")
 
-    # Lists to store included and eliminated image timestamps
-    included_images = []
-    eliminated_images = []
-
     if count > 0:
         # Convert the collection to a list and process images
         image_list = collection.toList(count)
@@ -148,11 +144,8 @@ if roi:
             timestamp = image.get("system:time_start").getInfo()
             date_time = datetime.utcfromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
-            # Convert the timestamp to a datetime object
-            image_date = datetime.utcfromtimestamp(timestamp / 1000).date()
-
             # Check if the image date falls within the selected date range
-            if start_date <= image_date <= end_date:
+            if start_date <= datetime.utcfromtimestamp(timestamp / 1000).date() <= end_date:
                 
                 # Set visualization parameters for each satellite type
                 if satellite == "Sentinel-2":
@@ -170,21 +163,6 @@ if roi:
                     overlay=True,
                 ).add_to(folium_map)
 
-                # Add to included images list
-                included_images.append(date_time)
-            else:
-                # Add to eliminated images list if it doesn't meet the date range
-                eliminated_images.append(date_time)
-
         # Render the map with all images
         st.subheader("🛰️ All Clipped Satellite Images")
         st_folium(folium_map, height=550, width="100%")
-
-        # Display the list of eliminated image timestamps
-        if eliminated_images:
-            st.subheader("❌ Eliminated Images (Outside Date Range)")
-            st.write(f"These images were excluded due to the date filter:")
-            for date_time in eliminated_images:
-                st.write(f"- {date_time}")
-        else:
-            st.write("No images were eliminated based on the selected date range.")
