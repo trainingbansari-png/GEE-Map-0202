@@ -132,20 +132,26 @@ if roi:
         # Filter collection for the selected image date
         selected_image = collection.filterDate(str(selected_image_date), str(selected_image_date)).first()
 
-        # Visualization parameters
-        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-        map_id = selected_image.getMapId(vis)
+        # Check if selected image exists
+        if selected_image:
+            st.write(f"Selected Image Date: {selected_image_date}")
+            
+            # Visualization parameters
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+            try:
+                map_id = selected_image.getMapId(vis)
+                folium.TileLayer(
+                    tiles=map_id["tile_fetcher"].url_format,
+                    attr="Google Earth Engine",
+                    name=satellite,
+                    overlay=True,
+                ).add_to(m)
 
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="Google Earth Engine",
-            name=satellite,
-            overlay=True,
-        ).add_to(m)
-
-        st.subheader(f"🛰️ Clipped Satellite Image for {selected_image_date}")
-        st_folium(m, height=550, width="100%")
-
+                st.subheader(f"🛰️ Clipped Satellite Image for {selected_image_date}")
+                st_folium(m, height=550, width="100%")
+            except Exception as e:
+                st.error(f"Error loading image: {e}")
+        else:
+            st.warning("No image found for the selected date.")
     else:
         st.warning("No images found for the selected date range. Please adjust the date filter.")
-        
