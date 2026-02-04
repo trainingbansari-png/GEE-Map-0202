@@ -122,7 +122,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat,
                                  st.session_state.lr_lon, st.session_state.lr_lat])
 
-    # Setup Collection
+# Only proceed if roi is valid
+if roi and roi.isValid().getInfo():
     collection_ids = {
         "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
         "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
@@ -162,19 +163,18 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             selected_img_with_time = add_time_to_image(selected_img, dt)
             
             # Ensure the region is valid and clip the image
-            if roi.isValid().getInfo():
-                map_id = selected_img_with_time.clip(roi).getMapId(vis)
+            map_id = selected_img_with_time.clip(roi).getMapId(vis)
                 
-                # Display Frame Map
-                frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
-                folium.TileLayer(
-                    tiles=map_id["tile_fetcher"].url_format,
-                    attr="Google Earth Engine",
-                    overlay=True,
-                    control=False
-                ).add_to(frame_map)
-                st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
-        
+            # Display Frame Map
+            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                overlay=True,
+                control=False
+            ).add_to(frame_map)
+            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
