@@ -11,7 +11,7 @@ st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx"]:
     st.session_state.setdefault(k, None)
 
 # ---------------- EE Init ----------------
@@ -33,13 +33,11 @@ initialize_ee()
 # ---------------- Cloud Masking Functions ----------------
 def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
-        # Sentinel-2: QA60 band for cloud masking
         qa = image.select('QA60')
         
         if qa is None:
             raise ValueError("QA60 band not found in Sentinel-2 image.")
         
-        # Cloud and cirrus bitmask (10th and 11th bits)
         cloud_bit_mask = 1 << 10
         cirrus_bit_mask = 1 << 11
         
@@ -66,7 +64,6 @@ with st.sidebar:
     st.header("🧭 Area of Interest")
     st.info("Draw a rectangle on the map to define your ROI.")
     
-    # Display the selected area (latitude and longitude)
     if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_lat and st.session_state.lr_lon:
         st.write(f"**Upper Left Corner**: Latitude: {st.session_state.ul_lat}, Longitude: {st.session_state.ul_lon}")
         st.write(f"**Lower Right Corner**: Latitude: {st.session_state.lr_lat}, Longitude: {st.session_state.lr_lon}")
@@ -79,7 +76,6 @@ with st.sidebar:
     lr_lat = st.number_input("Lower Right Latitude", value=st.session_state.lr_lat, format="%.6f")
     lr_lon = st.number_input("Lower Right Longitude", value=st.session_state.lr_lon, format="%.6f")
 
-    # Update session state with manually edited values
     st.session_state.ul_lat = ul_lat
     st.session_state.ul_lon = ul_lon
     st.session_state.lr_lat = lr_lat
@@ -102,7 +98,6 @@ draw = Draw(draw_options={"polyline": False, "polygon": False, "circle": False,
                           "marker": False, "circlemarker": False, "rectangle": True})
 draw.add_to(m)
 
-# Get the coordinates of the drawn rectangle and update session state
 map_data = st_folium(m, height=400, width="100%", key="roi_map")
 
 if map_data and map_data["all_drawings"]:
@@ -136,15 +131,12 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     total_count = collection.size().getInfo()
 
     def add_time_to_image(image, dt):
-        """Adds time information to the image."""
-        # Create a feature collection with a point geometry and the timestamp
         feature_collection = ee.FeatureCollection([
             ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
-                'time': dt  # Store time as a property
+                'time': dt
             })
         ])
         
-        # Paint the image with the feature collection; specify a valid color
         painted_image = image.paint(
             feature_collection,
             color='black',  # Use a valid color for text
@@ -192,9 +184,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 with st.spinner("Stitching images..."):
                     video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
                     
-                    # Adjusting the video parameters for smaller dimensions and region to avoid errors
                     video_url = video_collection.getVideoThumbURL({
-                        'dimensions': 300,  # Reduced dimensions to avoid large requests
+                        'dimensions': 300,
                         'region': roi,
                         'framesPerSecond': fps,
                         'crs': 'EPSG:3857'
@@ -202,4 +193,14 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                     
                     st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                     st.markdown(f"[📥 Download GIF]({video_url})")
-
+            
+            # Buttons for manual control (Next/Previous)
+            st.subheader("Manual Control")
+            if st.button("Previous Frame"):
+                if st.session_state.frame_idx is not None and st.session_state.frame_idx > 1:
+                    st.session_state.frame_idx -= 1
+                    st.experimental_rerun()
+            if st.button("Next Frame"):
+                if st.session_state.frame_idx is not None and st.session_state.frame_idx < total_count:
+                    st.session_state.frame_idx += 1
+                    st.experimental_rerun()
