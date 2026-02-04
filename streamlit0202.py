@@ -164,6 +164,25 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Visualization
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+
+            # Add time to the image (overlay text)
+            def add_time_to_image(image, timestamp):
+                # Overlay the timestamp on the image
+                text = ee.String(timestamp)
+                # Add the text at a specific location on the image (bottom-left corner)
+                return image.paint(
+                    ee.FeatureCollection([
+                        ee.Feature(ee.Geometry.Point(st.session_state.ul_lon, st.session_state.ul_lat), {
+                            'label': text
+                        })
+                    ]), 
+                    1,  # width of text line
+                    'label',  # attribute to paint (text)
+                    3  # padding
+                )
+
+            # Add timestamp to the image
+            selected_img = add_time_to_image(selected_img, dt)
             
             map_id = selected_img.clip(roi).getMapId(vis)
             
@@ -180,22 +199,14 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
 
-            if st.button("🎬 Generate Animated Video"):
-                try:
-                    # Create video collection with reduced resolution
+            if st.button("🎬 Generate Animated Video"):  # Fixed indentation
+                with st.spinner("Stitching images..."):
                     video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
-                    
-                    # Generate video URL with reduced dimensions (resolution)
                     video_url = video_collection.getVideoThumbURL({
-                        'dimensions': 400,  # Reduce video resolution
+                        'dimensions': 600,
                         'region': roi,
                         'framesPerSecond': fps,
-                        'crs': 'EPSG:3857'  # You can also try 'EPSG:4326' for a coarser CRS
+                        'crs': 'EPSG:3857'
                     })
-                    
                     st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                    st.markdown(f"[📥 Download GIF]({video_url})")
-                
-                except Exception as e:
-                    st.error(f"Error generating video: {e}")
-                    st.write("Please check if the image collection has enough data and try again.")
+                    st.markdown(f"[📥 Download GIF]({video_url})")  # Corrected line
