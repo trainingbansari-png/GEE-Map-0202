@@ -11,12 +11,8 @@ st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon"]:
     st.session_state.setdefault(k, None)
-
-# Initialize frame index for manual control
-if "frame_idx" not in st.session_state:
-    st.session_state.frame_idx = 1
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -39,29 +35,35 @@ def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
         # Sentinel-2: QA60 band for cloud masking
         qa = image.select('QA60')
-        
+       
+        # Check if QA60 band exists
         if qa is None:
             raise ValueError("QA60 band not found in Sentinel-2 image.")
-        
+       
+        # Cloud and cirrus bitmask (10th and 11th bits)
         cloud_bit_mask = 1 << 10
         cirrus_bit_mask = 1 << 11
-        
+       
+        # Create mask where both cloud and cirrus bits are zero
         mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(qa.bitwiseAnd(cirrus_bit_mask).eq(0))
         return image.updateMask(mask)
-    
+   
     elif satellite in ["Landsat-8", "Landsat-9"]:
         # Landsat cloud masking (QA_PIXEL band)
         qa = image.select('QA_PIXEL')
-        
+       
+        # Check if QA_PIXEL band exists
         if qa is None:
             raise ValueError(f"QA_PIXEL band not found in {satellite} image.")
-        
+       
+        # Bitmask for cloud (3rd bit) and cloud shadow (4th bit)
         cloud_bit_mask = 1 << 3
         shadow_bit_mask = 1 << 4
-        
+       
+        # Create mask where both cloud and shadow bits are zero
         mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(qa.bitwiseAnd(shadow_bit_mask).eq(0))
         return image.updateMask(mask)
-    
+   
     else:
         raise ValueError(f"Unsupported satellite: {satellite}")
 
@@ -69,7 +71,8 @@ def mask_clouds(image, satellite):
 with st.sidebar:
     st.header("🧭 Area of Interest")
     st.info("Draw a rectangle on the map to define your ROI.")
-    
+   
+    # Display the selected area (latitude and longitude)
     if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_lat and st.session_state.lr_lon:
         st.write(f"**Upper Left Corner**: Latitude: {st.session_state.ul_lat}, Longitude: {st.session_state.ul_lon}")
         st.write(f"**Lower Right Corner**: Latitude: {st.session_state.lr_lat}, Longitude: {st.session_state.lr_lon}")
@@ -102,7 +105,7 @@ with st.sidebar:
 # ---------------- Map Selection ----------------
 st.subheader("1. Select your Area")
 m = folium.Map(location=[22.0, 69.0], zoom_start=6)
-draw = Draw(draw_options={"polyline": False, "polygon": False, "circle": False, 
+draw = Draw(draw_options={"polyline": False, "polygon": False, "circle": False,
                           "marker": False, "circlemarker": False, "rectangle": True})
 draw.add_to(m)
 
@@ -113,7 +116,7 @@ if map_data and map_data["all_drawings"]:
     geom = map_data["all_drawings"][-1]["geometry"]
     coords = geom["coordinates"][0]
     lats, lons = [c[1] for c in coords], [c[0] for c in coords]
-    
+   
     # Update session state with the current rectangle coordinates
     st.session_state.ul_lat = min(lats)
     st.session_state.ul_lon = min(lons)
@@ -143,16 +146,20 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
     def add_time_to_image(image, dt):
         """Adds time information to the image."""
-        feature_collection = ee.FeatureCollection([
-            ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {'time': dt})
+        # Create a feature collection with a point geometry and the timestamp
+        feature_collection = ee.FeatureCollection([ 
+            ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
+                'time': dt  # Store time as a property
+            })
         ])
-        
+       
+        # Paint the image with the feature collection; specify a valid color
         painted_image = image.paint(
             feature_collection,
-            color='black',  # Valid color for text
+            color='black',  # Use a valid color for text
             width=2
         )
-        
+       
         return painted_image
 
     if total_count > 0:
@@ -198,12 +205,19 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
                     video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
-                    video_url = video_collection.getVideoThumbURL({
-                        'dimensions': 600,
-                        'region': roi,
-                        'framesPerSecond': fps,
-                        'crs': 'EPSG:3857'
-                    })
-                    st.image(video_url, caption="Generated Timelapse", use_container_width=True)
+                    
+                    try:
+                        # Debug: Check the total number of images in the collection
+                        st.write(f"Total images in the collection: {total_count}")
 
-                    st.markdown(f"[📥 Download GIF]({video_url})")
+                        video_url = video_collection.getVideoThumbURL({
+                            'dimensions': 600,
+                            'region': roi,
+                            'framesPerSecond': fps,
+                            'crs': 'EPSG:3857'
+                        })
+                        st.image(video_url, caption="Generated Timelapse", use_container_width=True)
+                        st.markdown(f"[📥 Download GIF]({video_url})")
+
+                    except Exception as e:
+                        st.error(f"Error generating video: {e}")
