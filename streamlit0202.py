@@ -67,6 +67,34 @@ def mask_clouds(image, satellite):
     else:
         raise ValueError(f"Unsupported satellite: {satellite}")
 
+# ---------------- Add Time to Image ----------------
+def add_time_to_image(image, timestamp):
+    """Add timestamp to image as text overlay."""
+    
+    # Convert the timestamp into a string and create a feature collection
+    text = ee.String(timestamp)
+    
+    # Create a feature with the label text, using a point geometry just for positioning
+    label_feature = ee.Feature(ee.Geometry.Point([0, 0]), {'label': text})
+    
+    # Create an image from the feature collection (we are visualizing text)
+    text_image = ee.Image().paint(
+        ee.FeatureCollection([label_feature]), 
+        2, 'label'
+    )
+    
+    # Visualize the image (this can include font size, color, etc.)
+    text_image = text_image.visualize(**{
+        'min': 0, 'max': 3000, 'bands': ['label'], 'palette': ['FFFFFF']
+    })
+    
+    # Blend the original image with the text image
+    painted_image = image.visualize(**{
+        'bands': ['B4', 'B3', 'B2'], 'min': 0, 'max': 3000
+    }).blend(text_image)
+    
+    return painted_image
+
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
@@ -144,7 +172,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
     total_count = collection.size().getInfo()
 
-    # Add timestamp to image as overlay
     if total_count > 0:
         st.divider()
         col1, col2 = st.columns([1, 1])
@@ -183,7 +210,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: add_time_to_image(img, img.get("system:time_start")))
+                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
                     video_url = video_collection.getVideoThumbURL({
                         'dimensions': 600,
                         'region': roi,
