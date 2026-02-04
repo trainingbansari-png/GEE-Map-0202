@@ -79,6 +79,19 @@ with st.sidebar:
     else:
         st.write("Draw a rectangle on the map to define your area.")
 
+    # Allow user to manually edit the coordinates (latitude and longitude)
+    st.header("✏️ Edit Coordinates")
+    ul_lat = st.number_input("Upper Left Latitude", value=st.session_state.ul_lat, format="%.6f")
+    ul_lon = st.number_input("Upper Left Longitude", value=st.session_state.ul_lon, format="%.6f")
+    lr_lat = st.number_input("Lower Right Latitude", value=st.session_state.lr_lat, format="%.6f")
+    lr_lon = st.number_input("Lower Right Longitude", value=st.session_state.lr_lon, format="%.6f")
+
+    # Update session state with the manually edited values
+    st.session_state.ul_lat = ul_lat
+    st.session_state.ul_lon = ul_lon
+    st.session_state.lr_lat = lr_lat
+    st.session_state.lr_lon = lr_lon
+
     st.header("📅 Date Filter")
     start_date = st.date_input("Start Date", date(2023, 1, 1))
     end_date = st.date_input("End Date", date(2023, 12, 31))
@@ -177,7 +190,4 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                         'framesPerSecond': fps,
                         'crs': 'EPSG:3857'
                     })
-                    st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                    st.markdown(f"[📥 Download GIF]({video_url})")
-    else:
-        st.warning("No clear images found for this area/date. Try a wider date range.")
+                    st.image(video_url, caption="Generated Timelapse", use_container_width
