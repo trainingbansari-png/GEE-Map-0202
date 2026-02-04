@@ -67,34 +67,6 @@ def mask_clouds(image, satellite):
     else:
         raise ValueError(f"Unsupported satellite: {satellite}")
 
-# ---------------- Add Time to Image ----------------
-def add_time_to_image(image, timestamp):
-    """Add timestamp to image as text overlay."""
-    
-    # Convert the timestamp into a string and create a feature collection
-    text = ee.String(timestamp)
-    
-    # Create a feature with the label text, using a point geometry just for positioning
-    label_feature = ee.Feature(ee.Geometry.Point([0, 0]), {'label': text})
-    
-    # Create an image from the feature collection (we are visualizing text)
-    text_image = ee.Image().paint(
-        ee.FeatureCollection([label_feature]), 
-        2, 'label'
-    )
-    
-    # Visualize the image (this can include font size, color, etc.)
-    text_image = text_image.visualize(**{
-        'min': 0, 'max': 3000, 'bands': ['label'], 'palette': ['FFFFFF']
-    })
-    
-    # Blend the original image with the text image
-    painted_image = image.visualize(**{
-        'bands': ['B4', 'B3', 'B2'], 'min': 0, 'max': 3000
-    }).blend(text_image)
-    
-    return painted_image
-
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
@@ -151,6 +123,37 @@ if map_data and map_data["all_drawings"]:
     st.session_state.lr_lat = max(lats)
     st.session_state.lr_lon = max(lons)
 
+# ---------------- Add Time to Image ----------------
+def add_time_to_image(image, dt):
+    """Adds time information to the image."""
+    feature_collection = ee.FeatureCollection([
+        ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
+            'time': dt
+        })
+    ])
+    
+    painted_image = image.paint(
+        feature_collection,
+        color='time', 
+        width=2
+    )
+    
+    return painted_image
+
+# ---------------- Get Map ID ----------------
+def get_map_id_with_time(selected_img, roi, vis_params):
+    """Fetches map ID for the image with time overlay."""
+    try:
+        # Ensure the image has been correctly processed with the time overlay
+        selected_img_with_time = selected_img.visualize(**vis_params).clip(roi)
+
+        # Get the map ID for the processed image
+        map_id = selected_img_with_time.getMapId()
+        return map_id
+    except Exception as e:
+        st.error(f"Error generating map: {e}")
+        return None
+
 # ---------------- Processing Logic ----------------
 roi = None
 if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_lat and st.session_state.lr_lon:
@@ -189,21 +192,24 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
             selected_img_with_time = add_time_to_image(selected_img, dt)
             
-            # Visualization
+            # Set the visualization parameters
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
             
-            map_id = selected_img_with_time.clip(roi).getMapId(vis)
+            # Fetch the map ID for the image with time overlay
+            map_id = get_map_id_with_time(selected_img_with_time, roi, vis)
             
-            # Display Frame Map
-            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
-            folium.TileLayer(
-                tiles=map_id["tile_fetcher"].url_format,
-                attr="Google Earth Engine",
-                overlay=True,
-                control=False
-            ).add_to(frame_map)
-            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+            if map_id:
+                # Display Frame Map
+                frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+                folium.TileLayer(
+                    tiles=map_id["tile_fetcher"].url_format,
+                    attr="Google Earth Engine",
+                    overlay=True,
+                    control=False
+                ).add_to(frame_map)
+                st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+                
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
