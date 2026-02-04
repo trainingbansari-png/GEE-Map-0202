@@ -150,8 +150,9 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             st.subheader("2. Manual Frame Scrubber")
             frame_idx = st.slider("Slide to 'play' through time", 1, total_count, 1)
            
+            # Use the frame index to get the image from the collection
             img_list = collection.toList(total_count)
-            selected_img = ee.Image(img_list.get(frame_idx - 1))
+            selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
            
             ts = selected_img.get("system:time_start").getInfo()
             dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
@@ -179,9 +180,10 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             play_button = st.button("▶️ Play", key="play_button")
             stop_button = st.button("⏹️ Stop", key="stop_button")
-            next_button = st.button("Next ▶️", key="next_button")
+            next_button = st.button("▶️ Next", key="next_button")
             prev_button = st.button("◀️ Previous", key="prev_button")
 
+            # Control logic for buttons
             if play_button:
                 st.session_state.is_playing = True
 
