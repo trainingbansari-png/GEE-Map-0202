@@ -1,6 +1,6 @@
 import streamlit as st
 import ee
-from datetime import datetime
+from datetime import date, datetime
 import folium
 from folium.plugins import Draw
 from streamlit_folium import st_folium
