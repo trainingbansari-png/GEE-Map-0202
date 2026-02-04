@@ -33,18 +33,35 @@ initialize_ee()
 # ---------------- Cloud Masking Functions ----------------
 def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
-        # Sentinel-2 cloud mask check
+        # Sentinel-2: QA60 band for cloud masking
         qa = image.select('QA60')
+        
+        # Check if QA60 band exists
+        if qa is None:
+            raise ValueError("QA60 band not found in Sentinel-2 image.")
+        
+        # Cloud and cirrus bitmask (10th and 11th bits)
         cloud_bit_mask = 1 << 10
         cirrus_bit_mask = 1 << 11
-        mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).and_(
-               qa.bitwiseAnd(cirrus_bit_mask).eq(0))
+        
+        # Create mask where both cloud and cirrus bits are zero
+        mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(qa.bitwiseAnd(cirrus_bit_mask).eq(0))
         return image.updateMask(mask)
     
     elif satellite in ["Landsat-8", "Landsat-9"]:
-        # Landsat cloud mask check
+        # Landsat cloud masking (QA_PIXEL band)
         qa = image.select('QA_PIXEL')
-        mask = qa.bitwiseAnd(1 << 3).eq(0).and_(qa.bitwiseAnd(1 << 4).eq(0))
+        
+        # Check if QA_PIXEL band exists
+        if qa is None:
+            raise ValueError(f"QA_PIXEL band not found in {satellite} image.")
+        
+        # Bitmask for cloud (3rd bit) and cloud shadow (4th bit)
+        cloud_bit_mask = 1 << 3
+        shadow_bit_mask = 1 << 4
+        
+        # Create mask where both cloud and shadow bits are zero
+        mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(qa.bitwiseAnd(shadow_bit_mask).eq(0))
         return image.updateMask(mask)
     
     else:
