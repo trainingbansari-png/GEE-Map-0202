@@ -17,13 +17,18 @@ for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon"]:
 
 # ---------------- EE Init ----------------
 def initialize_ee():
-    if not ee.data._credentials:
-        service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
-        credentials = service_account.Credentials.from_service_account_info(
-            service_account_info,
-            scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
-        )
-        ee.Initialize(credentials)
+    try:
+        # Authenticate and initialize Earth Engine if not already authenticated
+        if not ee.data._credentials:
+            service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info,
+                scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
+            )
+            ee.Initialize(credentials)
+        st.success("Earth Engine initialized successfully.")
+    except Exception as e:
+        st.error(f"Error initializing Earth Engine: {e}")
 
 initialize_ee()
 
@@ -71,7 +76,14 @@ if map_data and map_data["all_drawings"]:
     coords = geom["coordinates"][0]
     lats, lons = [c[1] for c in coords], [c[0] for c in coords]
     
-    roi = ee.Geometry.Rectangle([min(lons), min(lats), max(lons), max(lats)])
+    # Update session state with the current rectangle coordinates
+    st.session_state.ul_lat = min(lats)
+    st.session_state.ul_lon = min(lons)
+    st.session_state.lr_lat = max(lats)
+    st.session_state.lr_lon = max(lons)
+    
+    roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat,
+                                 st.session_state.lr_lon, st.session_state.lr_lat])
 
     # Setup Collection
     collection_ids = {
