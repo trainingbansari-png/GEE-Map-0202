@@ -191,11 +191,5 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
 
-            # Play/Pause button
-            play_button = st.button("► Play")
-
-            if play_button:
-                for idx in range(1, total_count + 1):
-                    frame_idx = idx
-                    time.sleep(0.5)  # Add a small delay between frames for "playback"
-                    st.experimental_rerun()  # Redraw
+            # No need for play button or experimental rerun anymore!
+            st.button("🎬 Generate Timelapse Video")
