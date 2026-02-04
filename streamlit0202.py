@@ -165,18 +165,16 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-            # Add time as text
+            # Add time as text to the image
             def add_time_to_image(image, timestamp):
                 # Convert text to an image
-                text_image = ee.Image().byte().paint(ee.FeatureCollection([ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
-                    'label': ee.String(timestamp)
-                })]), 'label')
+                text_image = ee.Image().byte().paint(ee.FeatureCollection([ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {"text": timestamp})]), "text", 3)  # Padding
                 
-                # Composite the image and text
+                # Overlay the text image on the satellite image
                 return image.addBands(text_image)
-
-            selected_img = add_time_to_image(selected_img, dt)
             
+            # Apply time overlay
+            selected_img = add_time_to_image(selected_img, dt)
             map_id = selected_img.clip(roi).getMapId(vis)
             
             # Display Frame Map
@@ -188,7 +186,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 control=False
             ).add_to(frame_map)
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
-            
+
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
