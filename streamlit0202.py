@@ -1,7 +1,6 @@
 import streamlit as st
 import ee
 import folium
-import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
@@ -18,14 +17,13 @@ for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon"]:
 # ---------------- EE Init ----------------
 def initialize_ee():
     try:
-        # Authenticate and initialize Earth Engine if not already authenticated
-        if not ee.data._credentials:
-            service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
-            credentials = service_account.Credentials.from_service_account_info(
-                service_account_info,
-                scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
-            )
-            ee.Initialize(credentials)
+        # Authenticate and initialize Earth Engine
+        service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
+        )
+        ee.Initialize(credentials)  # Initialize Earth Engine with service account credentials
         st.success("Earth Engine initialized successfully.")
     except Exception as e:
         st.error(f"Error initializing Earth Engine: {e}")
