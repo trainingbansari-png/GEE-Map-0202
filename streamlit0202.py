@@ -36,10 +36,6 @@ def mask_clouds(image, satellite):
         # Sentinel-2: QA60 band for cloud masking
         qa = image.select('QA60')
         
-        # Check if QA60 band exists
-        if qa is None:
-            raise ValueError("QA60 band not found in Sentinel-2 image.")
-        
         # Cloud and cirrus bitmask (10th and 11th bits)
         cloud_bit_mask = 1 << 10
         cirrus_bit_mask = 1 << 11
@@ -51,10 +47,6 @@ def mask_clouds(image, satellite):
     elif satellite in ["Landsat-8", "Landsat-9"]:
         # Landsat cloud masking (QA_PIXEL band)
         qa = image.select('QA_PIXEL')
-        
-        # Check if QA_PIXEL band exists
-        if qa is None:
-            raise ValueError(f"QA_PIXEL band not found in {satellite} image.")
         
         # Bitmask for cloud (3rd bit) and cloud shadow (4th bit)
         cloud_bit_mask = 1 << 3
@@ -123,13 +115,34 @@ if map_data and map_data["all_drawings"]:
     st.session_state.lr_lat = max(lats)
     st.session_state.lr_lon = max(lons)
 
+# ---------------- Add Time to Image ----------------
+def add_time_to_image(image, date_time):
+    # Set the font size and color for the text overlay
+    font = {
+        'fontSize': 12, 
+        'textColor': 'FFFFFF', 
+        'haloColor': '000000', 
+        'haloWidth': 2
+    }
+    
+    # Create a feature collection containing the time text
+    text_feature = ee.Feature(ee.Geometry.Point([0, 0]), {'time': date_time})
+
+    # Convert the text feature to a label and add it to the image using `paint`
+    image_with_time = image.paint(
+        featureCollection=ee.FeatureCollection([text_feature]),
+        color='time',  # Use the 'time' field to apply the label
+        width=3
+    )
+    
+    # Return the modified image with the added time text
+    return image_with_time
+
 # ---------------- Processing Logic ----------------
-roi = None
 if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_lat and st.session_state.lr_lon:
     roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat,
                                  st.session_state.lr_lon, st.session_state.lr_lat])
 
-    # Setup Collection
     collection_ids = {
         "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
         "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
@@ -161,7 +174,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
             st.caption(f"Showing Frame {frame_idx} | Date: {dt}")
 
-            # Visualization
+            # Visualization settings
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
@@ -179,34 +192,10 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 control=False
             ).add_to(frame_map)
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
 
             if st.button("🎬 Generate Animated Video"):
-                with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
-                    video_url = video_collection.getVideoThumbURL({
-                        'dimensions': 600,
-                        'region': roi,
-                        'framesPerSecond': fps,
-                        'crs': 'EPSG:3857'
-                    })
-                    st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                    st.markdown(f"[📥 Download GIF]({video_url})")
-
-# Function to add time to the image
-def add_time_to_image(image, date_time):
-    # Create a feature collection to display text on the image
-    text = ee.FeatureCollection([
-        ee.Feature(ee.Geometry.Point([0, 0]), {'system:index': 'time', 'time': date_time})
-    ])
-    
-    # Add the text to the image using the paint method
-    painted_image = image.paint(
-        featureCollection=text,
-        color='black',  # Text color
-        width=1
-    )
-    
-    return painted_image
+                with st.spinner("Stitching images
