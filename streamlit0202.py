@@ -169,8 +169,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             def add_time_to_image(image, timestamp):
                 # Convert text to an image
                 text_image = ee.Image().byte().paint(ee.FeatureCollection([ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {"text": timestamp})]), "text", 3)  # Padding
-                
-                # Overlay the text image on the satellite image
                 return image.addBands(text_image)
             
             # Apply time overlay
