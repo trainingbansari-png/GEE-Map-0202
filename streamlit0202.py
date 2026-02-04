@@ -67,22 +67,6 @@ def mask_clouds(image, satellite):
     else:
         raise ValueError(f"Unsupported satellite: {satellite}")
 
-# ---------------- Add Time to Image ----------------
-def add_time_to_image(image, date_time):
-    # Create a feature collection to display text on the image
-    text = ee.FeatureCollection([
-        ee.Feature(ee.Geometry.Point([0, 0]), {'system:index': 'time', 'time': date_time})
-    ])
-    
-    # Add the text to the image using the paint method
-    painted_image = image.paint(
-        featureCollection=text,
-        color='black',  # Text color
-        width=1,
-        scale=30  # Adjust the scale for text size
-    )
-    return painted_image
-
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
@@ -141,88 +125,88 @@ if map_data and map_data["all_drawings"]:
 
 # ---------------- Processing Logic ----------------
 roi = None
-
-# Initialize roi only if the coordinates are valid (i.e. non-empty)
 if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_lat and st.session_state.lr_lon:
     roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat,
                                  st.session_state.lr_lon, st.session_state.lr_lat])
 
-# Only proceed if roi is valid
-if roi:
-    try:
-        # Check if the roi has valid bounds
-        bounds = roi.bounds().getInfo()
-        if bounds and len(bounds['coordinates'][0]) > 0:
-            collection_ids = {
-                "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
-                "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
-                "Landsat-9": "LANDSAT/LC09/C02/T1_L2",
-            }
+    # Setup Collection
+    collection_ids = {
+        "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
+        "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
+        "Landsat-9": "LANDSAT/LC09/C02/T1_L2",
+    }
 
-            collection = (ee.ImageCollection(collection_ids[satellite])
-                        .filterBounds(roi)
-                        .filterDate(str(start_date), str(end_date))
-                        .map(lambda img: mask_clouds(img, satellite))  # Map with cloud masking
-                        .sort("system:time_start"))
+    collection = (ee.ImageCollection(collection_ids[satellite])
+                  .filterBounds(roi)
+                  .filterDate(str(start_date), str(end_date))
+                  .map(lambda img: mask_clouds(img, satellite))  # Map with cloud masking
+                  .sort("system:time_start"))
 
-            total_count = collection.size().getInfo()
+    total_count = collection.size().getInfo()
 
-            if total_count > 0:
-                st.divider()
-                col1, col2 = st.columns([1, 1])
+    if total_count > 0:
+        st.divider()
+        col1, col2 = st.columns([1, 1])
 
-                with col1:
-                    st.subheader("2. Manual Frame Scrubber")
-                    frame_idx = st.slider("Slide to 'play' through time", 1, total_count, 1)
+        with col1:
+            st.subheader("2. Manual Frame Scrubber")
+            frame_idx = st.slider("Slide to 'play' through time", 1, total_count, 1)
+            
+            # Get specific image
+            img_list = collection.toList(total_count)
+            selected_img = ee.Image(img_list.get(frame_idx - 1))
+            
+            # Metadata
+            ts = selected_img.get("system:time_start").getInfo()
+            dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
+            st.caption(f"Showing Frame {frame_idx} | Date: {dt}")
 
-                    # Get specific image
-                    img_list = collection.toList(total_count)
-                    selected_img = ee.Image(img_list.get(frame_idx - 1))
+            # Visualization
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
+                  else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-                    # Metadata
-                    ts = selected_img.get("system:time_start").getInfo()
-                    dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
-                    st.caption(f"Showing Frame {frame_idx} | Date: {dt}")
+            # Add time to image
+            selected_img_with_time = add_time_to_image(selected_img, dt)
+            
+            map_id = selected_img_with_time.clip(roi).getMapId(vis)
+            
+            # Display Frame Map
+            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                overlay=True,
+                control=False
+            ).add_to(frame_map)
+            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+        with col2:
+            st.subheader("3. Export Timelapse")
+            fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
 
-                    # Visualization
-                    vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
-                          else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+            if st.button("🎬 Generate Animated Video"):
+                with st.spinner("Stitching images..."):
+                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
+                    video_url = video_collection.getVideoThumbURL({
+                        'dimensions': 600,
+                        'region': roi,
+                        'framesPerSecond': fps,
+                        'crs': 'EPSG:3857'
+                    })
+                    st.image(video_url, caption="Generated Timelapse", use_container_width=True)
+                    st.markdown(f"[📥 Download GIF]({video_url})")
 
-                    # Add time text to image
-                    selected_img_with_time = add_time_to_image(selected_img, dt)
-
-                    # Ensure the region is valid and clip the image
-                    map_id = selected_img_with_time.clip(roi).getMapId(vis)
-
-                    # Display Frame Map
-                    frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
-                    folium.TileLayer(
-                        tiles=map_id["tile_fetcher"].url_format,
-                        attr="Google Earth Engine",
-                        overlay=True,
-                        control=False
-                    ).add_to(frame_map)
-                    st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
-                with col2:
-                    st.subheader("3. Export Timelapse")
-                    fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
-
-                    if st.button("🎬 Generate Animated Video"):
-                        with st.spinner("Stitching images..."):
-                            video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
-                            video_url = video_collection.getVideoThumbURL({
-                                'dimensions': 600,
-                                'region': roi,
-                                'framesPerSecond': fps,
-                                'crs': 'EPSG:3857'
-                            })
-                            st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                            st.markdown(f"[📥 Download GIF]({video_url})")
-            else:
-                st.error("No images found in the selected date range.")
-        else:
-            st.warning("Invalid region of interest.")
-    except Exception as e:
-        st.error(f"Error: {e}")
-else:
-    st.warning("Please define a valid region of interest (ROI) by selecting a rectangle on the map.")
+# Function to add time to the image
+def add_time_to_image(image, date_time):
+    # Create a feature collection to display text on the image
+    text = ee.FeatureCollection([
+        ee.Feature(ee.Geometry.Point([0, 0]), {'system:index': 'time', 'time': date_time})
+    ])
+    
+    # Add the text to the image using the paint method
+    painted_image = image.paint(
+        featureCollection=text,
+        color='black',  # Text color
+        width=1
+    )
+    
+    return painted_image
