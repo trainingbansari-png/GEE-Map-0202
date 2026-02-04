@@ -33,16 +33,28 @@ initialize_ee()
 # ---------------- Cloud Masking Functions ----------------
 def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
+        # Check if the QA60 band exists in Sentinel-2 image
+        if 'QA60' not in image.bandNames().getInfo():
+            raise ValueError("Sentinel-2 image does not contain 'QA60' band.")
+        
         qa = image.select('QA60')
         cloud_bit_mask = 1 << 10
         cirrus_bit_mask = 1 << 11
         mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).and_(
                qa.bitwiseAnd(cirrus_bit_mask).eq(0))
         return image.updateMask(mask)
-    else: # Landsat 8/9
+    
+    elif satellite in ["Landsat-8", "Landsat-9"]:
+        # Check if the QA_PIXEL band exists in Landsat image
+        if 'QA_PIXEL' not in image.bandNames().getInfo():
+            raise ValueError(f"{satellite} image does not contain 'QA_PIXEL' band.")
+        
         qa = image.select('QA_PIXEL')
         mask = qa.bitwiseAnd(1 << 3).eq(0).and_(qa.bitwiseAnd(1 << 4).eq(0))
         return image.updateMask(mask)
+    
+    else:
+        raise ValueError(f"Unsupported satellite: {satellite}")
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
@@ -93,7 +105,7 @@ if map_data and map_data["all_drawings"]:
     collection = (ee.ImageCollection(collection_ids[satellite])
                   .filterBounds(roi)
                   .filterDate(str(start_date), str(end_date))
-                  .map(lambda img: mask_clouds(img, satellite))
+                  .map(lambda img: mask_clouds(img, satellite))  # Map with cloud masking
                   .sort("system:time_start"))
 
     total_count = collection.size().getInfo()
