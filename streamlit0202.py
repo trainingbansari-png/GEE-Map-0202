@@ -67,6 +67,17 @@ def mask_clouds(image, satellite):
     else:
         raise ValueError(f"Unsupported satellite: {satellite}")
 
+# ---------------- Function to Add Time ----------------
+def add_time_to_image(image, date_str):
+    """Add the time (date) as text on the image."""
+    # Convert the date string to an ee.Image
+    text_image = ee.Image().byte().paint(
+        ee.FeatureCollection([ee.Feature(ee.Geometry.Point(0, 0), {"label": date_str})]),
+        color="label", width=2
+    )
+    # Overlay the text on the satellite image
+    return image.addBands(text_image.rename('time_text'))
+
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
@@ -112,34 +123,16 @@ draw.add_to(m)
 # Get the coordinates of the drawn rectangle and update session state
 map_data = st_folium(m, height=400, width="100%", key="roi_map")
 
-# Ensure that lats and lons are properly populated before using them
 if map_data and map_data["all_drawings"]:
     geom = map_data["all_drawings"][-1]["geometry"]
     coords = geom["coordinates"][0]
+    lats, lons = [c[1] for c in coords], [c[0] for c in coords]
     
-    # Make sure coords is not empty
-    if coords:
-        lats, lons = [c[1] for c in coords], [c[0] for c in coords]
-        st.session_state.ul_lat = min(lats)
-        st.session_state.ul_lon = min(lons)
-        st.session_state.lr_lat = max(lats)
-        st.session_state.lr_lon = max(lons)
-
-        # Only calculate the center if valid coordinates exist
-        center_lat = sum(lats) / len(lats)
-        center_lon = sum(lons) / len(lons)
-
-        # Create map with the calculated center
-        frame_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
-        folium.TileLayer(
-            tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", 
-            attr="OpenStreetMap", overlay=True, control=False
-        ).add_to(frame_map)
-        st_folium(frame_map, height=400, width="100%", key="frame_map")
-    else:
-        st.error("No valid coordinates found in the drawn area.")
-else:
-    st.error("Please draw a valid rectangle on the map to define your area.")
+    # Update session state with the current rectangle coordinates
+    st.session_state.ul_lat = min(lats)
+    st.session_state.ul_lon = min(lons)
+    st.session_state.lr_lat = max(lats)
+    st.session_state.lr_lon = max(lons)
 
 # ---------------- Processing Logic ----------------
 roi = None
@@ -188,7 +181,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             map_id = selected_img_with_time.clip(roi).getMapId(vis)
             
             # Display Frame Map
-            frame_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
+            frame_map = folium.Map(location=[sum(lats) / len(lats), sum(lons) / len(lons)], zoom_start=12)
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
                 attr="Google Earth Engine",
@@ -198,4 +191,17 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
 
         with col2:
-            st.sub
+            st.subheader("3. Export Timelapse")
+            fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
+
+            if st.button("🎬 Generate Animated Video"): 
+                with st.spinner("Stitching images..."):
+                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
+                    video_url = video_collection.getVideoThumbURL({
+                        'dimensions': 600,
+                        'region': roi,
+                        'framesPerSecond': fps,
+                        'crs': 'EPSG:3857'
+                    })
+                    st.image(video_url, caption="Generated Timelapse", use_container_width=True)
+                    st.markdown(f"[📥 Download GIF]({video_url})") 
