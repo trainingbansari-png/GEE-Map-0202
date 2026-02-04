@@ -72,6 +72,13 @@ with st.sidebar:
     st.header("🧭 Area of Interest")
     st.info("Draw a rectangle on the map to define your ROI.")
     
+    # Display the selected area (latitude and longitude)
+    if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_lat and st.session_state.lr_lon:
+        st.write(f"**Upper Left Corner**: Latitude: {st.session_state.ul_lat}, Longitude: {st.session_state.ul_lon}")
+        st.write(f"**Lower Right Corner**: Latitude: {st.session_state.lr_lat}, Longitude: {st.session_state.lr_lon}")
+    else:
+        st.write("Draw a rectangle on the map to define your area.")
+
     st.header("📅 Date Filter")
     start_date = st.date_input("Start Date", date(2023, 1, 1))
     end_date = st.date_input("End Date", date(2023, 12, 31))
@@ -85,13 +92,13 @@ with st.sidebar:
 # ---------------- Map Selection ----------------
 st.subheader("1. Select your Area")
 m = folium.Map(location=[22.0, 69.0], zoom_start=6)
-Draw(draw_options={"polyline": False, "polygon": False, "circle": False, 
-                   "marker": False, "circlemarker": False, "rectangle": True}).add_to(m)
+draw = Draw(draw_options={"polyline": False, "polygon": False, "circle": False, 
+                          "marker": False, "circlemarker": False, "rectangle": True})
+draw.add_to(m)
 
+# Get the coordinates of the drawn rectangle and update session state
 map_data = st_folium(m, height=400, width="100%", key="roi_map")
 
-# ---------------- Processing Logic ----------------
-roi = None
 if map_data and map_data["all_drawings"]:
     geom = map_data["all_drawings"][-1]["geometry"]
     coords = geom["coordinates"][0]
@@ -102,7 +109,10 @@ if map_data and map_data["all_drawings"]:
     st.session_state.ul_lon = min(lons)
     st.session_state.lr_lat = max(lats)
     st.session_state.lr_lon = max(lons)
-    
+
+# ---------------- Processing Logic ----------------
+roi = None
+if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_lat and st.session_state.lr_lon:
     roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat,
                                  st.session_state.lr_lon, st.session_state.lr_lat])
 
