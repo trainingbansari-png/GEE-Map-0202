@@ -178,17 +178,18 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-            map_id = selected_img_with_time.clip(roi).getMapId(vis)
-
-            # Display Frame Map
-            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
-            folium.TileLayer(
-                tiles=map_id["tile_fetcher"].url_format,
-                attr="Google Earth Engine",
-                overlay=True,
-                control=False
-            ).add_to(frame_map)
-            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+            try:
+                map_id = selected_img_with_time.clip(roi).getMapId(vis)
+                frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+                folium.TileLayer(
+                    tiles=map_id["tile_fetcher"].url_format,
+                    attr="Google Earth Engine",
+                    overlay=True,
+                    control=False
+                ).add_to(frame_map)
+                st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+            except Exception as e:
+                st.error(f"Error generating map: {e}")
 
         # Second column (timelapse export)
         with col2:
@@ -197,7 +198,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
+                    video_collection = collection.map(lambda img: add_time_to_image(img, img.get("system:time_start")))
                     video_url = video_collection.getVideoThumbURL({
                         'dimensions': 600,
                         'region': roi,
