@@ -33,34 +33,20 @@ initialize_ee()
 # ---------------- Cloud Masking Functions ----------------
 def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
-        # Sentinel-2: QA60 band for cloud masking
         qa = image.select('QA60')
-       
-        # Check if QA60 band exists
         if qa is None:
             raise ValueError("QA60 band not found in Sentinel-2 image.")
-       
-        # Cloud and cirrus bitmask (10th and 11th bits)
         cloud_bit_mask = 1 << 10
         cirrus_bit_mask = 1 << 11
-       
-        # Create mask where both cloud and cirrus bits are zero
         mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(qa.bitwiseAnd(cirrus_bit_mask).eq(0))
         return image.updateMask(mask)
    
     elif satellite in ["Landsat-8", "Landsat-9"]:
-        # Landsat cloud masking (QA_PIXEL band)
         qa = image.select('QA_PIXEL')
-       
-        # Check if QA_PIXEL band exists
         if qa is None:
             raise ValueError(f"QA_PIXEL band not found in {satellite} image.")
-       
-        # Bitmask for cloud (3rd bit) and cloud shadow (4th bit)
         cloud_bit_mask = 1 << 3
         shadow_bit_mask = 1 << 4
-       
-        # Create mask where both cloud and shadow bits are zero
         mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(qa.bitwiseAnd(shadow_bit_mask).eq(0))
         return image.updateMask(mask)
    
@@ -71,22 +57,17 @@ def mask_clouds(image, satellite):
 with st.sidebar:
     st.header("🧭 Area of Interest")
     st.info("Draw a rectangle on the map to define your ROI.")
-   
-    # Display the selected area (latitude and longitude)
     if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_lat and st.session_state.lr_lon:
         st.write(f"**Upper Left Corner**: Latitude: {st.session_state.ul_lat}, Longitude: {st.session_state.ul_lon}")
         st.write(f"**Lower Right Corner**: Latitude: {st.session_state.lr_lat}, Longitude: {st.session_state.lr_lon}")
     else:
         st.write("Draw a rectangle on the map to define your area.")
 
-    # Allow user to manually edit the coordinates (latitude and longitude)
     st.header("✏️ Edit Coordinates")
     ul_lat = st.number_input("Upper Left Latitude", value=st.session_state.ul_lat, format="%.6f")
     ul_lon = st.number_input("Upper Left Longitude", value=st.session_state.ul_lon, format="%.6f")
     lr_lat = st.number_input("Lower Right Latitude", value=st.session_state.lr_lat, format="%.6f")
     lr_lon = st.number_input("Lower Right Longitude", value=st.session_state.lr_lon, format="%.6f")
-
-    # Update session state with the manually edited values
     st.session_state.ul_lat = ul_lat
     st.session_state.ul_lon = ul_lon
     st.session_state.lr_lat = lr_lat
@@ -109,15 +90,12 @@ draw = Draw(draw_options={"polyline": False, "polygon": False, "circle": False,
                           "marker": False, "circlemarker": False, "rectangle": True})
 draw.add_to(m)
 
-# Get the coordinates of the drawn rectangle and update session state
 map_data = st_folium(m, height=400, width="100%", key="roi_map")
 
 if map_data and map_data["all_drawings"]:
     geom = map_data["all_drawings"][-1]["geometry"]
     coords = geom["coordinates"][0]
     lats, lons = [c[1] for c in coords], [c[0] for c in coords]
-   
-    # Update session state with the current rectangle coordinates
     st.session_state.ul_lat = min(lats)
     st.session_state.ul_lon = min(lons)
     st.session_state.lr_lat = max(lats)
@@ -129,7 +107,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat,
                                  st.session_state.lr_lon, st.session_state.lr_lat])
 
-    # Setup Collection
     collection_ids = {
         "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
         "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
@@ -140,26 +117,23 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                   .filterBounds(roi)
                   .filterDate(str(start_date), str(end_date))
                   .map(lambda img: mask_clouds(img, satellite))  # Map with cloud masking
-                  .sort("system:time_start"))
+                  .sort("system:time_start")
+                  .limit(30))  # Limit to a smaller number of frames (e.g., 30)
 
     total_count = collection.size().getInfo()
 
     def add_time_to_image(image, dt):
         """Adds time information to the image."""
-        # Create a feature collection with a point geometry and the timestamp
         feature_collection = ee.FeatureCollection([ 
             ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
                 'time': dt  # Store time as a property
             })
         ])
-       
-        # Paint the image with the feature collection; specify a valid color
         painted_image = image.paint(
             feature_collection,
-            color='black',  # Use a valid color for text
+            color='black',
             width=2
         )
-       
         return painted_image
 
     if total_count > 0:
@@ -170,25 +144,20 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             st.subheader("2. Manual Frame Scrubber")
             frame_idx = st.slider("Slide to 'play' through time", 1, total_count, 1)
            
-            # Get specific image
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))
            
-            # Metadata
             ts = selected_img.get("system:time_start").getInfo()
             dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
             st.caption(f"Showing Frame {frame_idx} | Date: {dt}")
 
-            # Add time to image
             selected_img_with_time = add_time_to_image(selected_img, dt)
 
-            # Visualization
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
            
             map_id = selected_img_with_time.clip(roi).getMapId(vis)
-           
-            # Display Frame Map
+
             frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
@@ -207,11 +176,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                     video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
                     
                     try:
-                        # Debug: Check the total number of images in the collection
-                        st.write(f"Total images in the collection: {total_count}")
-
                         video_url = video_collection.getVideoThumbURL({
-                            'dimensions': 600,
+                            'dimensions': 400,  # Reduced size
                             'region': roi,
                             'framesPerSecond': fps,
                             'crs': 'EPSG:3857'
