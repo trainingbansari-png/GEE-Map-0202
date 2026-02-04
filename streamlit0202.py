@@ -176,12 +176,11 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
             
-            # Add time to image
             selected_img_with_time = add_time_to_image(selected_img, dt)
             map_id = selected_img_with_time.clip(roi).getMapId(vis)
             
             # Display Frame Map
-            frame_map = folium.Map(location=[sum(lats) / len(lats), sum(lons) / len(lons)], zoom_start=12)
+            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
                 attr="Google Earth Engine",
@@ -189,7 +188,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 control=False
             ).add_to(frame_map)
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
-
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
@@ -204,4 +202,4 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                         'crs': 'EPSG:3857'
                     })
                     st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                    st.markdown(f"[📥 Download GIF]({video_url})") 
+                    st.markdown(f"[📥 Download GIF]({video_url})")
