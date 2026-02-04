@@ -144,6 +144,18 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
     total_count = collection.size().getInfo()
 
+    def add_time_to_image(image, timestamp):
+        """Add timestamp to image as text overlay"""
+        text = ee.String(timestamp)
+        font = {'fontSize': 12, 'textColor': 'FFFFFF', 'haloColor': '000000', 'haloWidth': 2}
+        return image.paint(
+            ee.FeatureCollection([
+                ee.Feature(image.geometry(), {'label': text})
+            ]), 
+            2,  # padding
+            font
+        )
+
     if total_count > 0:
         st.divider()
         col1, col2 = st.columns([1, 1])
@@ -160,13 +172,13 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Metadata
             ts = selected_img.get("system:time_start").getInfo()
             dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
-            st.caption(f"Showing Frame {frame_idx} | Date: {dt}")
+            selected_img_with_time = add_time_to_image(selected_img, dt)
 
             # Visualization
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
-            map_id = selected_img.clip(roi).getMapId(vis)
+            map_id = selected_img_with_time.clip(roi).getMapId(vis)
 
             # Display Frame Map
             frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
