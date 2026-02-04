@@ -5,14 +5,20 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
     st.session_state.setdefault(k, None)
+
+if "is_playing" not in st.session_state:
+    st.session_state.is_playing = False
+if "frame_idx" not in st.session_state:
+    st.session_state.frame_idx = 1
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -171,19 +177,46 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
 
-            if st.button("🎬 Generate Animated Video"):
-                with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
-                    
-                    try:
-                        video_url = video_collection.getVideoThumbURL({
-                            'dimensions': 400,  # Reduced size
-                            'region': roi,
-                            'framesPerSecond': fps,
-                            'crs': 'EPSG:3857'
-                        })
-                        st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                        st.markdown(f"[📥 Download GIF]({video_url})")
+            play_button = st.button("▶️ Play", key="play_button")
+            stop_button = st.button("⏹️ Stop", key="stop_button")
+            next_button = st.button("Next ▶️", key="next_button")
+            prev_button = st.button("◀️ Previous", key="prev_button")
 
-                    except Exception as e:
-                        st.error(f"Error generating video: {e}")
+            if play_button:
+                st.session_state.is_playing = True
+
+            if stop_button:
+                st.session_state.is_playing = False
+
+            if next_button and st.session_state.frame_idx < total_count:
+                st.session_state.frame_idx += 1
+
+            if prev_button and st.session_state.frame_idx > 1:
+                st.session_state.frame_idx -= 1
+
+            if st.session_state.is_playing:
+                # Auto advance frame
+                if st.session_state.frame_idx < total_count:
+                    st.session_state.frame_idx += 1
+                    time.sleep(0.5)  # Slow down the animation
+                    st.experimental_rerun()
+
+            # Show the selected image frame
+            selected_img = ee.Image(collection.toList(total_count).get(st.session_state.frame_idx - 1))
+            ts = selected_img.get("system:time_start").getInfo()
+            dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
+            selected_img_with_time = add_time_to_image(selected_img, dt)
+
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
+                  else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+           
+            map_id = selected_img_with_time.clip(roi).getMapId(vis)
+
+            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                overlay=True,
+                control=False
+            ).add_to(frame_map)
+            st_folium(frame_map, height=400, width="100%", key=f"frame_{st.session_state.frame_idx}")
