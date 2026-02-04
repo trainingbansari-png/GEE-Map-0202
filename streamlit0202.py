@@ -11,7 +11,7 @@ st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
     st.session_state.setdefault(k, None)
 
 # ---------------- EE Init ----------------
@@ -33,6 +33,7 @@ initialize_ee()
 # ---------------- Cloud Masking Functions ----------------
 def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
+        # Sentinel-2: QA60 band for cloud masking
         qa = image.select('QA60')
         
         if qa is None:
@@ -45,6 +46,7 @@ def mask_clouds(image, satellite):
         return image.updateMask(mask)
     
     elif satellite in ["Landsat-8", "Landsat-9"]:
+        # Landsat cloud masking (QA_PIXEL band)
         qa = image.select('QA_PIXEL')
         
         if qa is None:
@@ -70,12 +72,14 @@ with st.sidebar:
     else:
         st.write("Draw a rectangle on the map to define your area.")
 
+    # Allow user to manually edit the coordinates (latitude and longitude)
     st.header("✏️ Edit Coordinates")
     ul_lat = st.number_input("Upper Left Latitude", value=st.session_state.ul_lat, format="%.6f")
     ul_lon = st.number_input("Upper Left Longitude", value=st.session_state.ul_lon, format="%.6f")
     lr_lat = st.number_input("Lower Right Latitude", value=st.session_state.lr_lat, format="%.6f")
     lr_lon = st.number_input("Lower Right Longitude", value=st.session_state.lr_lon, format="%.6f")
 
+    # Update session state with the manually edited values
     st.session_state.ul_lat = ul_lat
     st.session_state.ul_lon = ul_lon
     st.session_state.lr_lat = lr_lat
@@ -98,6 +102,7 @@ draw = Draw(draw_options={"polyline": False, "polygon": False, "circle": False,
                           "marker": False, "circlemarker": False, "rectangle": True})
 draw.add_to(m)
 
+# Get the coordinates of the drawn rectangle and update session state
 map_data = st_folium(m, height=400, width="100%", key="roi_map")
 
 if map_data and map_data["all_drawings"]:
@@ -105,6 +110,7 @@ if map_data and map_data["all_drawings"]:
     coords = geom["coordinates"][0]
     lats, lons = [c[1] for c in coords], [c[0] for c in coords]
     
+    # Update session state with the current rectangle coordinates
     st.session_state.ul_lat = min(lats)
     st.session_state.ul_lon = min(lons)
     st.session_state.lr_lat = max(lats)
@@ -116,6 +122,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat,
                                  st.session_state.lr_lon, st.session_state.lr_lat])
 
+    # Setup Collection
     collection_ids = {
         "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
         "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
@@ -125,21 +132,20 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     collection = (ee.ImageCollection(collection_ids[satellite])
                   .filterBounds(roi)
                   .filterDate(str(start_date), str(end_date))
-                  .map(lambda img: mask_clouds(img, satellite))
+                  .map(lambda img: mask_clouds(img, satellite))  # Map with cloud masking
                   .sort("system:time_start"))
 
     total_count = collection.size().getInfo()
 
     def add_time_to_image(image, dt):
+        """Adds time information to the image."""
         feature_collection = ee.FeatureCollection([
-            ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
-                'time': dt
-            })
+            ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {'time': dt})
         ])
         
         painted_image = image.paint(
             feature_collection,
-            color='black',  # Use a valid color for text
+            color='black',  # Valid color for text
             width=2
         )
         
@@ -152,21 +158,26 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         with col1:
             st.subheader("2. Manual Frame Scrubber")
             frame_idx = st.slider("Slide to 'play' through time", 1, total_count, 1)
-            
+           
+            # Get specific image
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))
-            
+           
+            # Metadata
             ts = selected_img.get("system:time_start").getInfo()
             dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
             st.caption(f"Showing Frame {frame_idx} | Date: {dt}")
 
+            # Add time to image
             selected_img_with_time = add_time_to_image(selected_img, dt)
 
+            # Visualization
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
-            
+           
             map_id = selected_img_with_time.clip(roi).getMapId(vis)
-
+           
+            # Display Frame Map
             frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
@@ -180,27 +191,37 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
 
+            # Buttons for controlling video navigation
+            play_button = st.button("► Play", key="play")
+            stop_button = st.button("II Stop", key="stop")
+            next_button = st.button("Next >>", key="next")
+            prev_button = st.button("<< Previous", key="prev")
+            
+            # Update frame index based on buttons
+            if play_button:
+                st.session_state.is_playing = True
+            if stop_button:
+                st.session_state.is_playing = False
+            if next_button:
+                st.session_state.frame_idx = min(st.session_state.frame_idx + 1, total_count)
+            if prev_button:
+                st.session_state.frame_idx = max(st.session_state.frame_idx - 1, 1)
+
+            # Automatically move to next frame if playing
+            if st.session_state.is_playing:
+                if st.session_state.frame_idx < total_count:
+                    st.session_state.frame_idx += 1
+                else:
+                    st.session_state.frame_idx = 1
+
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
                     video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
-                    
                     video_url = video_collection.getVideoThumbURL({
-                        'dimensions': 300,
+                        'dimensions': 600,
                         'region': roi,
                         'framesPerSecond': fps,
                         'crs': 'EPSG:3857'
                     })
-                    
                     st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                     st.markdown(f"[📥 Download GIF]({video_url})")
-            
-            # Buttons for manual control (Next/Previous)
-            st.subheader("Manual Control")
-            if st.button("Previous Frame"):
-                if st.session_state.frame_idx is not None and st.session_state.frame_idx > 1:
-                    st.session_state.frame_idx -= 1
-                    st.experimental_rerun()
-            if st.button("Next Frame"):
-                if st.session_state.frame_idx is not None and st.session_state.frame_idx < total_count:
-                    st.session_state.frame_idx += 1
-                    st.experimental_rerun()
