@@ -148,14 +148,15 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         st.divider()
         col1, col2 = st.columns([1, 1])
 
+        # First column (frame scrubber)
         with col1:
             st.subheader("2. Manual Frame Scrubber")
             frame_idx = st.slider("Slide to 'play' through time", 1, total_count, 1)
-            
+
             # Get specific image
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))
-            
+
             # Metadata
             ts = selected_img.get("system:time_start").getInfo()
             dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
@@ -164,32 +165,20 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Visualization
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
-            
-          # Ensure ROI is valid
-if roi is None or not roi.isValid().getInfo():
-    st.error("Invalid Region of Interest (ROI). Please select a valid area.")
-else:
-    # Add time text to the image
-    def add_time_to_image(image, time_str):
-        text = ee.Image().paint(ee.FeatureCollection([
-            ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {"text": time_str})
-        ]), 3)  # padding
-        return image.visualize(**vis).addBands(text)
 
-    selected_img = add_time_to_image(selected_img, dt)
+            map_id = selected_img.clip(roi).getMapId(vis)
 
-    # Get map ID for visualization
-    map_id = selected_img.clip(roi).getMapId(vis)
-    
-    # Display Frame Map
-    frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
-    folium.TileLayer(
-        tiles=map_id["tile_fetcher"].url_format,
-        attr="Google Earth Engine",
-        overlay=True,
-        control=False
-    ).add_to(frame_map)
-    st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+            # Display Frame Map
+            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                overlay=True,
+                control=False
+            ).add_to(frame_map)
+            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+
+        # Second column (timelapse export)
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
@@ -205,4 +194,3 @@ else:
                     })
                     st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                     st.markdown(f"[📥 Download GIF]({video_url})")
-
