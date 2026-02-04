@@ -5,7 +5,6 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
-import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -13,12 +12,15 @@ st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
 for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
-    st.session_state.setdefault(k, None)
+    if k not in st.session_state:
+        st.session_state[k] = None
 
-if "is_playing" not in st.session_state:
-    st.session_state.is_playing = False
-if "frame_idx" not in st.session_state:
+# Initialize `frame_idx` and `is_playing` if not set already
+if st.session_state.frame_idx is None:
     st.session_state.frame_idx = 1
+
+if st.session_state.is_playing is None:
+    st.session_state.is_playing = False
 
 # ---------------- EE Init ----------------
 def initialize_ee():
