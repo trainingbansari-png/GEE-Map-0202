@@ -1,14 +1,10 @@
 import streamlit as st
 import ee
 import folium
-from folium.plugins import Drawimport streamlit as st
-import ee
-import folium
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
-
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
