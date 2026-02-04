@@ -5,6 +5,7 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -158,7 +159,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             
             # Metadata
             ts = selected_img.get("system:time_start").getInfo()
-            dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
+            dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
             st.caption(f"Showing Frame {frame_idx} | Date: {dt}")
 
             # Visualization
@@ -175,19 +176,26 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 overlay=True,
                 control=False
             ).add_to(frame_map)
+
+            # Add Date Information to Frame
+            folium.Marker(
+                location=[sum(lats)/len(lats), sum(lons)/len(lons)],
+                popup=f"Date: {dt}",
+                icon=folium.Icon(color='red')
+            ).add_to(frame_map)
+            
+            # Display the map for the current frame
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+        
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
 
-            if st.button("🎬 Generate Animated Video"):  # Fixed indentation
-                with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
-                    video_url = video_collection.getVideoThumbURL({
-                        'dimensions': 600,
-                        'region': roi,
-                        'framesPerSecond': fps,
-                        'crs': 'EPSG:3857'
-                    })
-                    st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                    st.markdown(f"[📥 Download GIF]({video_url})") 
+            # Play/Pause button
+            play_button = st.button("► Play")
+
+            if play_button:
+                for idx in range(1, total_count + 1):
+                    frame_idx = idx
+                    time.sleep(0.5)  # Add a small delay between frames for "playback"
+                    st.experimental_rerun()  # Redraw the interface to update the
