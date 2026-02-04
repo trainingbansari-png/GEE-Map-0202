@@ -134,7 +134,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 # Only proceed if roi is valid
 if roi:
     try:
-        if roi.isValid().getInfo():  # Check if roi is valid
+        # Check if the roi is valid by ensuring it is not empty
+        if not roi.isEmpty().getInfo():  # Check if roi is not empty
             collection_ids = {
                 "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
                 "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
@@ -185,7 +186,6 @@ if roi:
                         control=False
                     ).add_to(frame_map)
                     st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
-
                 with col2:
                     st.subheader("3. Export Timelapse")
                     fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
