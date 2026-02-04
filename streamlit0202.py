@@ -153,6 +153,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 ee.Feature(image.geometry(), {'label': text})
             ]), 
             2,  # padding
+            1,   # width for painting the text
             font
         )
 
