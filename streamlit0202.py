@@ -145,26 +145,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     total_count = collection.size().getInfo()
 
     # Add timestamp to image as overlay
-    def add_time_to_image(image, timestamp):
-        """Add timestamp to image as text overlay"""
-        text = ee.String(timestamp)
-        
-        # Create a feature with the timestamp text
-        text_feature = ee.Feature(image.geometry(), {'label': text})
-        
-        # Create a FeatureCollection to hold the text feature
-        feature_collection = ee.FeatureCollection([text_feature])
-        
-        # Use the 'paint' method to render the text as a visual overlay on the image
-        painted_image = image.paint(
-            feature_collection,
-            2,  # width for painting the text
-            1,  # color index (white or black for the halo)
-            {'fontSize': 12, 'textColor': 'FFFFFF', 'haloColor': '000000', 'haloWidth': 2}  # font styling
-        )
-        
-        return painted_image
-
     if total_count > 0:
         st.divider()
         col1, col2 = st.columns([1, 1])
