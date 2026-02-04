@@ -183,15 +183,20 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 try:
-                    # Video generation
+                    # Create video collection
+                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
+                    
+                    # Generate video URL
                     video_url = video_collection.getVideoThumbURL({
                         'dimensions': 600,
                         'region': roi,
                         'framesPerSecond': fps,
                         'crs': 'EPSG:3857'
                     })
+                    
                     st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                     st.markdown(f"[📥 Download GIF]({video_url})")
+                
                 except Exception as e:
                     st.error(f"Error generating video: {e}")
                     st.write("Please check if the image collection has enough data and try again.")
