@@ -176,12 +176,11 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 control=False
             ).add_to(frame_map)
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
-
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
-            
-                     if st.button("🎬 Generate Animated Video"):
+
+            if st.button("🎬 Generate Animated Video"):  # Fixed indentation
                 with st.spinner("Stitching images..."):
                     video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
                     video_url = video_collection.getVideoThumbURL({
@@ -191,4 +190,4 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                         'crs': 'EPSG:3857'
                     })
                     st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                    st.markdown(f"[📥 Download GIF]({video_url})")  # Corrected this line
+                    st.markdown(f"[📥 Download GIF]({video_url})")  # Corrected line
