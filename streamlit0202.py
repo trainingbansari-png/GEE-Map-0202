@@ -14,6 +14,10 @@ st.title("🌍 GEE Satellite Video Generator")
 for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
     st.session_state.setdefault(k, None)
 
+# Initialize frame index for manual control
+if "frame_idx" not in st.session_state:
+    st.session_state.frame_idx = 1
+
 # ---------------- EE Init ----------------
 def initialize_ee():
     try:
@@ -191,29 +195,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
 
-            # Buttons for controlling video navigation
-            play_button = st.button("► Play", key="play")
-            stop_button = st.button("II Stop", key="stop")
-            next_button = st.button("Next >>", key="next")
-            prev_button = st.button("<< Previous", key="prev")
-            
-            # Update frame index based on buttons
-            if play_button:
-                st.session_state.is_playing = True
-            if stop_button:
-                st.session_state.is_playing = False
-            if next_button:
-                st.session_state.frame_idx = min(st.session_state.frame_idx + 1, total_count)
-            if prev_button:
-                st.session_state.frame_idx = max(st.session_state.frame_idx - 1, 1)
-
-            # Automatically move to next frame if playing
-            if st.session_state.is_playing:
-                if st.session_state.frame_idx < total_count:
-                    st.session_state.frame_idx += 1
-                else:
-                    st.session_state.frame_idx = 1
-
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
                     video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
@@ -224,4 +205,5 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                         'crs': 'EPSG:3857'
                     })
                     st.image(video_url, caption="Generated Timelapse", use_container_width=True)
+
                     st.markdown(f"[📥 Download GIF]({video_url})")
