@@ -144,55 +144,59 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
     total_count = collection.size().getInfo()
 
+    # Add timestamp to image as overlay
     def add_time_to_image(image, timestamp):
         """Add timestamp to image as text overlay"""
         text = ee.String(timestamp)
-        font = {'fontSize': 12, 'textColor': 'FFFFFF', 'haloColor': '000000', 'haloWidth': 2}
-        return image.paint(
-            ee.FeatureCollection([
-                ee.Feature(image.geometry(), {'label': text})
-            ]), 
-            2,  # padding
-            1,   # width for painting the text
-            font
+        
+        # Create a feature with the timestamp text
+        text_feature = ee.Feature(image.geometry(), {'label': text})
+        
+        # Create a FeatureCollection to hold the text feature
+        feature_collection = ee.FeatureCollection([text_feature])
+        
+        # Use the 'paint' method to render the text as a visual overlay on the image
+        painted_image = image.paint(
+            feature_collection,
+            2,  # width for painting the text
+            1,  # color index (white or black for the halo)
+            {'fontSize': 12, 'textColor': 'FFFFFF', 'haloColor': '000000', 'haloWidth': 2}  # font styling
         )
+        
+        return painted_image
 
     if total_count > 0:
         st.divider()
         col1, col2 = st.columns([1, 1])
 
-        # First column (frame scrubber)
         with col1:
             st.subheader("2. Manual Frame Scrubber")
             frame_idx = st.slider("Slide to 'play' through time", 1, total_count, 1)
-
+            
             # Get specific image
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))
-
-            # Metadata
+            
+            # Add timestamp to the image
             ts = selected_img.get("system:time_start").getInfo()
             dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
             selected_img_with_time = add_time_to_image(selected_img, dt)
-
+            
             # Visualization
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
-
-            try:
-                map_id = selected_img_with_time.clip(roi).getMapId(vis)
-                frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
-                folium.TileLayer(
-                    tiles=map_id["tile_fetcher"].url_format,
-                    attr="Google Earth Engine",
-                    overlay=True,
-                    control=False
-                ).add_to(frame_map)
-                st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
-            except Exception as e:
-                st.error(f"Error generating map: {e}")
-
-        # Second column (timelapse export)
+            
+            map_id = selected_img_with_time.clip(roi).getMapId(vis)
+            
+            # Display Frame Map
+            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                overlay=True,
+                control=False
+            ).add_to(frame_map)
+            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
