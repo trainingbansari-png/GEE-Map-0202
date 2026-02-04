@@ -172,30 +172,3 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
-                attr="Google Earth Engine",
-                overlay=True,
-                control=False
-            ).add_to(frame_map)
-
-            # Add Date Information to Frame
-            folium.Marker(
-                location=[sum(lats)/len(lats), sum(lons)/len(lons)],
-                popup=f"Date: {dt}",
-                icon=folium.Icon(color='red')
-            ).add_to(frame_map)
-            
-            # Display the map for the current frame
-            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
-        
-        with col2:
-            st.subheader("3. Export Timelapse")
-            fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
-
-            # Play/Pause button
-            play_button = st.button("► Play")
-
-            if play_button:
-                for idx in range(1, total_count + 1):
-                    frame_idx = idx
-                    time.sleep(0.5)  # Add a small delay between frames for "playback"
-                    st.experimental_rerun()  # Redraw the interface to update the
