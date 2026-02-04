@@ -67,6 +67,22 @@ def mask_clouds(image, satellite):
     else:
         raise ValueError(f"Unsupported satellite: {satellite}")
 
+# ---------------- Add Time to Image ----------------
+def add_time_to_image(image, date_time):
+    # Create a feature collection to display text on the image
+    text = ee.FeatureCollection([
+        ee.Feature(ee.Geometry.Point([0, 0]), {'system:index': 'time', 'time': date_time})
+    ])
+    
+    # Add the text to the image using the paint method
+    painted_image = image.paint(
+        featureCollection=text,
+        color='black',  # Text color
+        width=1,
+        scale=30  # Adjust the scale for text size
+    )
+    return painted_image
+
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
