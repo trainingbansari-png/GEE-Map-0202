@@ -134,8 +134,9 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 # Only proceed if roi is valid
 if roi:
     try:
-        # Check if the roi is valid by ensuring it is not empty
-        if not roi.isEmpty().getInfo():  # Check if roi is not empty
+        # Check if the roi has valid bounds
+        bounds = roi.bounds().getInfo()
+        if bounds and len(bounds['coordinates'][0]) > 0:
             collection_ids = {
                 "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
                 "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
