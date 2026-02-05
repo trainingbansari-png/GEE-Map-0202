@@ -1,0 +1,33 @@
+import moviepy.editor as mpy
+import requests
+from io import BytesIO
+from PIL import Image
+
+def create_video_from_frames(frames, fps):
+    """
+    Create a video from a list of frame URLs.
+    This function downloads the images from the URLs and creates a video using moviepy.
+    """
+    image_clips = []
+    
+    # Download each frame image and convert it to a moviepy ImageClip
+    for frame_url in frames:
+        try:
+            response = requests.get(frame_url)
+            img = Image.open(BytesIO(response.content))  # Load image from the URL
+            img_clip = mpy.ImageClip(np.array(img)).set_duration(1 / fps)  # Convert image to clip
+            image_clips.append(img_clip)
+        except Exception as e:
+            st.error(f"Error loading frame: {frame_url} -> {str(e)}")
+    
+    if image_clips:
+        # Concatenate all the images into a video clip
+        video = mpy.concatenate_videoclips(image_clips, method="compose")
+        
+        # Output the video to a file or URL (for now, we save it locally and show it)
+        video_path = "/tmp/timelapse_video.mp4"
+        video.write_videofile(video_path, codec="libx264", fps=fps)
+        
+        # Return a URL to the generated video (for simplicity, we assume it's local for now)
+        return video_path
+
