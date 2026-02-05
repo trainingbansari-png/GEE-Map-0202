@@ -6,7 +6,6 @@ from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
 import requests
-import moviepy.editor as mpy
 import numpy as np
 from io import BytesIO
 from PIL import Image
