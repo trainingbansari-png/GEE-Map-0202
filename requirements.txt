@@ -6,3 +6,4 @@ streamlit-folium>=0.18.0
 pandas>=2.1.0
 google-auth>=2.27.0
 moviepy
+imageio[ffmpeg]
