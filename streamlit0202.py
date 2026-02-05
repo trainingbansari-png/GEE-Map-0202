@@ -5,7 +5,6 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
-import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -131,7 +130,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
     total_count = collection.size().getInfo()
 
-    def add_timestamp_to_image(image, timestamp):
+    def add_time_to_image(image, timestamp):
         """Adds timestamp to the image as a label."""
         # Create a feature collection with timestamp information
         feature_collection = ee.FeatureCollection([ 
@@ -170,28 +169,31 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Now, generate the video with timestamps
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    # Add timestamps to each image in the collection
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
+                    # Now we need to fetch each image, visualize it, and add the timestamp
+                    frames = []
 
-                    # Apply the timestamp to each frame
-                    def add_timestamp_to_frame(img):
-                        timestamp_ms = img.get("system:time_start").getInfo()
-                        timestamp = datetime.utcfromtimestamp(timestamp_ms / 1000).strftime('%Y-%m-%d')
-                        # Apply timestamp to image and return it
-                        return add_timestamp_to_image(img, timestamp)
-
-                    # Apply timestamp function to all images
-                    video_collection = video_collection.map(add_timestamp_to_frame)
+                    for i in range(total_count):
+                        img = ee.Image(collection.toList(total_count).get(i))  # Get the i-th image
+                        ts = img.get("system:time_start").getInfo()
+                        timestamp = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
+                        
+                        img_with_timestamp = add_time_to_image(img, timestamp)  # Add timestamp to image
+                        
+                        # Visualize the image
+                        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
+                            else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+                        
+                        # Get map ID and add it to the video collection
+                        map_id = img_with_timestamp.clip(roi).getMapId(vis)
+                        frames.append(map_id["tile_fetcher"].url_format)
                     
-                    try:
-                        video_url = video_collection.getVideoThumbURL({
-                            'dimensions': 400,  # Reduced size
-                            'region': roi,
-                            'framesPerSecond': fps,
-                            'crs': 'EPSG:3857'
-                        })
-                        st.image(video_url, caption="Generated Timelapse with Timestamps", use_container_width=True)
-                        st.markdown(f"[📥 Download GIF]({video_url})")
+                    # Create the video
+                    video_url = create_video_from_frames(frames, fps)
+                    st.image(video_url, caption="Generated Timelapse", use_container_width=True)
+                    st.markdown(f"[📥 Download GIF]({video_url})")
 
-                    except Exception as e:
-                        st.error(f"Error generating video: {e}")
+# ---------------- Function to Create Video ----------------
+def create_video_from_frames(frames, fps):
+    # Function to create video from frames
+    # For now, return a placeholder URL or implement an actual video creation function
+    return "https://example.com/your_video_url.gif"
