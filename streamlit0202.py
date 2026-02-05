@@ -174,9 +174,21 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
                     # Add timestamps to each image in the collection
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi).map(
-                        lambda img: add_timestamp_to_image(img, datetime.utcfromtimestamp(img.get("system:time_start").getInfo() / 1000).strftime('%Y-%m-%d'))
-                    ))
+                    video_collection = collection.map(lambda img: {
+                        'image': img.visualize(**vis).clip(roi),
+                        'timestamp': img.get("system:time_start").getInfo()  # Get the timestamp directly
+                    })
+
+                    # Apply the timestamp to each frame
+                    def add_timestamp_to_frame(frame_data):
+                        img = frame_data['image']
+                        timestamp_ms = frame_data['timestamp']
+                        timestamp = datetime.utcfromtimestamp(timestamp_ms / 1000).strftime('%Y-%m-%d')
+                        # Add timestamp to image
+                        return add_timestamp_to_image(img, timestamp)
+
+                    # Apply the timestamp to all images
+                    video_collection = video_collection.map(add_timestamp_to_frame)
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
