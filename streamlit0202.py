@@ -5,6 +5,11 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import requests
+import moviepy.editor as mpy
+import numpy as np
+from io import BytesIO
+from PIL import Image
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -42,8 +47,6 @@ initialize_ee()
 def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
         qa = image.select('QA60')
-        if qa is None:
-            raise ValueError("QA60 band not found in Sentinel-2 image.")
         cloud_bit_mask = 1 << 10
         cirrus_bit_mask = 1 << 11
         mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(qa.bitwiseAnd(cirrus_bit_mask).eq(0))
@@ -51,8 +54,6 @@ def mask_clouds(image, satellite):
    
     elif satellite in ["Landsat-8", "Landsat-9"]:
         qa = image.select('QA_PIXEL')
-        if qa is None:
-            raise ValueError(f"QA_PIXEL band not found in {satellite} image.")
         cloud_bit_mask = 1 << 3
         shadow_bit_mask = 1 << 4
         mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(qa.bitwiseAnd(shadow_bit_mask).eq(0))
@@ -130,16 +131,18 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
     total_count = collection.size().getInfo()
 
-    def add_time_to_image(image, timestamp):
-        """Adds timestamp to the image as a label."""
-        # Create a feature collection with timestamp information
+    def add_time_to_image(image, dt):
+        """Adds time information to the image."""
         feature_collection = ee.FeatureCollection([ 
             ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
-                'time': timestamp  # Store timestamp as a property
+                'time': dt  # Store time as a property
             })
         ])
-        # Paint the timestamp and return the updated image
-        painted_image = image.paint(feature_collection, color='black', width=2)
+        painted_image = image.paint(
+            feature_collection,
+            color='black',
+            width=2
+        )
         return painted_image
 
     if total_count > 0:
@@ -147,53 +150,36 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         col1, col2 = st.columns([1, 1])
 
         with col1:
-            st.subheader("2. Export Timelapse")
-            fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
+            st.subheader("2. Manual Frame Scrubber")
+            
+            # Ensure that the frame index is within the bounds of the collection
+            if "frame_idx" not in st.session_state or st.session_state.frame_idx < 1:
+                st.session_state.frame_idx = 1
+            elif st.session_state.frame_idx > total_count:
+                st.session_state.frame_idx = total_count
 
-            play_button = st.button("▶️ Play")
-            pause_button = st.button("⏸️ Pause")
+            frame_idx = st.slider("Slide to 'play' through time", 1, total_count, st.session_state.frame_idx)
 
-            # Manage play/pause functionality
-            if play_button:
-                st.session_state.is_playing = True
-            if pause_button:
-                st.session_state.is_playing = False
+            # Use the frame index to get the image from the collection
+            img_list = collection.toList(total_count)
+            selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
+           
+            ts = selected_img.get("system:time_start").getInfo()
+            dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
+            st.caption(f"Showing Frame {frame_idx} | Date: {dt}")
 
-            if st.session_state.is_playing:
-                # Automatic frame progression for play
-                while st.session_state.frame_idx < total_count and st.session_state.is_playing:
-                    time.sleep(1 / fps)  # Control the playback speed
-                    st.session_state.frame_idx += 1  # Move to the next frame
-                    st.experimental_rerun()  # Re-run to refresh the app with new frame
+            selected_img_with_time = add_time_to_image(selected_img, dt)
 
-            # Now, generate the video with timestamps
-            if st.button("🎬 Generate Animated Video"):
-                with st.spinner("Stitching images..."):
-                    # Now we need to fetch each image, visualize it, and add the timestamp
-                    frames = []
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
+                  else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+           
+            map_id = selected_img_with_time.clip(roi).getMapId(vis)
 
-                    for i in range(total_count):
-                        img = ee.Image(collection.toList(total_count).get(i))  # Get the i-th image
-                        ts = img.get("system:time_start").getInfo()
-                        timestamp = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
-                        
-                        img_with_timestamp = add_time_to_image(img, timestamp)  # Add timestamp to image
-                        
-                        # Visualize the image
-                        vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
-                            else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
-                        
-                        # Get map ID and add it to the video collection
-                        map_id = img_with_timestamp.clip(roi).getMapId(vis)
-                        frames.append(map_id["tile_fetcher"].url_format)
-                    
-                    # Create the video
-                    video_url = create_video_from_frames(frames, fps)
-                    st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                    st.markdown(f"[📥 Download GIF]({video_url})")
-
-# ---------------- Function to Create Video ----------------
-def create_video_from_frames(frames, fps):
-    # Function to create video from frames
-    # For now, return a placeholder URL or implement an actual video creation function
-    return "https://example.com/your_video_url.gif"
+            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                overlay=True,
+                control=False
+            ).add_to(frame_map)
+            st_folium(frame_map, height=400
