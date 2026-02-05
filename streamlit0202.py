@@ -5,6 +5,7 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -186,6 +187,21 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
+
+            play_button = st.button("▶️ Play")
+            pause_button = st.button("⏸️ Pause")
+
+            # Manage play/pause functionality
+            if play_button:
+                st.session_state.is_playing = True
+            if pause_button:
+                st.session_state.is_playing = False
+
+            if st.session_state.is_playing:
+                while st.session_state.frame_idx < total_count:
+                    time.sleep(1 / fps)  # Control the playback speed based on FPS
+                    st.session_state.frame_idx += 1
+                    st.experimental_rerun()
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
