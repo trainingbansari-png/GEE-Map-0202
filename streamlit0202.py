@@ -131,19 +131,16 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
     total_count = collection.size().getInfo()
 
-    def add_timestamp_to_image(image, dt):
+    def add_timestamp_to_image(image, timestamp):
         """Adds timestamp to the image as a label."""
+        # Create a feature collection with timestamp information
         feature_collection = ee.FeatureCollection([ 
             ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
-                'time': dt  # Store time as a property
+                'time': timestamp  # Store timestamp as a property
             })
         ])
-        # Add timestamp to image
-        painted_image = image.paint(
-            feature_collection,
-            color='black',
-            width=2
-        ).text('Timestamp: ' + dt, position='bottom-left', color='white', font_size=14)  # Add timestamp at bottom left
+        # Paint the timestamp and return the updated image
+        painted_image = image.paint(feature_collection, color='black', width=2)
         return painted_image
 
     if total_count > 0:
@@ -174,20 +171,16 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
                     # Add timestamps to each image in the collection
-                    video_collection = collection.map(lambda img: {
-                        'image': img.visualize(**vis).clip(roi),
-                        'timestamp': img.get("system:time_start").getInfo()  # Get the timestamp directly
-                    })
+                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
 
                     # Apply the timestamp to each frame
-                    def add_timestamp_to_frame(frame_data):
-                        img = frame_data['image']
-                        timestamp_ms = frame_data['timestamp']
+                    def add_timestamp_to_frame(img):
+                        timestamp_ms = img.get("system:time_start").getInfo()
                         timestamp = datetime.utcfromtimestamp(timestamp_ms / 1000).strftime('%Y-%m-%d')
-                        # Add timestamp to image
+                        # Apply timestamp to image and return it
                         return add_timestamp_to_image(img, timestamp)
 
-                    # Apply the timestamp to all images
+                    # Apply timestamp function to all images
                     video_collection = video_collection.map(add_timestamp_to_frame)
                     
                     try:
