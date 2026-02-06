@@ -132,11 +132,26 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     def get_frame_date(image):
         """Extracts the acquisition date."""
         timestamp = ee.Date(image.get("system:time_start"))
-        timestamp_seconds = timestamp.millis().divide(1000)  # Convert to seconds
-        timestamp_python = datetime.utcfromtimestamp(timestamp_seconds.getInfo())  # Convert to Python datetime
-        formatted_date = timestamp_python.strftime('%Y-%m-%d')  # Format date
-        formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
-        return formatted_date, formatted_time
+        date = timestamp.format("YYYY-MM-dd")
+        time = timestamp.format("HH:mm:ss")
+        return date, time
+
+    def add_date_time_overlay(image):
+        """Add date and time overlay for each image frame."""
+        date, time = get_frame_date(image)
+        # Combine the formatted date and time
+        date_time_text = ee.String(date).cat(ee.String(" | ").cat(time))
+        
+        # Apply visualization and overlay text (with date and time)
+        vis = {
+            "bands": ["B4", "B3", "B2"],
+            "min": 0,
+            "max": 3000
+        }
+
+        # Overlay the text on the image
+        image_with_text = image.visualize(**vis).set({'text': date_time_text})
+        return image_with_text
 
     if total_count > 0:
         st.divider()
@@ -178,27 +193,21 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
         with col2:
             st.subheader("3. Export Timelapse")
-            fps = st.number_input("Frames Per Second", min_value=1, max_value=5, value=1)  # Slow down FPS
+            fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    def add_date_time_overlay(image):
-                        # Get date and time for the frame
-                        date, time = get_frame_date(image)
-                        # Add text annotation with date and time
-                        return image.visualize(**vis).set({'text': f"{date} | {time}"})
-
                     video_collection = collection.map(add_date_time_overlay).clip(roi)
-
+                    
                     try:
                         video_url = video_collection.getVideoThumbURL({
-                            'dimensions': 400,  # Adjust dimensions to your needs
+                            'dimensions': 400,  # Adjust dimensions as per requirement
                             'region': roi,
                             'framesPerSecond': fps,
                             'crs': 'EPSG:3857'
                         })
 
-                        # Display the generated timelapse video with frame-specific date and time
+                        # Display the generated timelapse video
                         st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
