@@ -6,27 +6,26 @@ from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
 import numpy as np
-from io import BytesIO
-from PIL import Image
+import time
 
 # ---------------- Page Config ----------------
-st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
-st.title("🌍 GEE Satellite Video Generator")
+st.set_page_config(layout="wide", page_title="GEE Satellite Data Viewer")
+st.title("🌍 GEE Satellite Data Viewer & Timelapse Generator")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing", "parameter"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing", "index"]:
     if k not in st.session_state:
         st.session_state[k] = None
 
-# Initialize `frame_idx` and `is_playing` if not set already
+# Initialize `frame_idx`, `is_playing`, and `index` if not set already
 if st.session_state.frame_idx is None:
     st.session_state.frame_idx = 1
 
 if st.session_state.is_playing is None:
     st.session_state.is_playing = False
 
-if st.session_state.parameter is None:
-    st.session_state.parameter = "Level1"
+if st.session_state.index is None:
+    st.session_state.index = "Level 1"  # Default to Level 1
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -92,13 +91,18 @@ with st.sidebar:
         "Select Satellite",
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
-    
-    st.header("📊 Select Parameter")
+
+    st.header("🔢 Select Parameter")
     parameter = st.selectbox(
-        "Choose the Parameter",
-        ["Level1", "NDVI", "EVI", "NDWI", "SAVI", "NDSI", "MNDWI"]
+        "Select Parameter",
+        ["Level 1", "NDVI", "NDWI", "EVI", "NDMI", "NDSI", "GNDVI", "LSWI", "SAVI", "MSAVI", "DVI", "VIs"]
     )
-    st.session_state.parameter = parameter
+    st.session_state.index = parameter  # Store selected parameter
+
+    # Timelapse options
+    st.header("🎬 Timelapse Settings")
+    fps = st.slider("Frames per second", 1, 30, 10)
+    timelapse_button = st.button("Generate Timelapse")
 
 # ---------------- Map Selection ----------------
 st.subheader("1. Select your Area")
@@ -148,46 +152,27 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
         return formatted_date, formatted_time
 
-    # Parameter Selection Logic (e.g., NDVI, EVI)
-    def apply_parameter(image, parameter):
-        if parameter == "NDVI":
-            ndvi = image.normalizedDifference(['B8', 'B4'])  # Red and NIR bands for NDVI
-            return ndvi.rename("NDVI")
-        elif parameter == "EVI":
+    def compute_index(image, index):
+        """Computes different indices based on the selected parameter."""
+        if index == "NDVI":
+            # Calculate NDVI
+            ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI')
+            return ndvi
+        elif index == "NDWI":
+            # Calculate NDWI
+            ndwi = image.normalizedDifference(['B3', 'B8']).rename('NDWI')
+            return ndwi
+        elif index == "EVI":
+            # Calculate EVI
             evi = image.expression(
-                'G * ((B8 - B4) / (B8 + C1 * B4 - C2 * B3 + L))',
-                {
-                    'B8': image.select('B8'),  # NIR band
-                    'B4': image.select('B4'),  # Red band
-                    'B3': image.select('B3'),  # Blue band
-                    'L': 10000,  # Gain factor
-                    'C1': 6.0,   # Coefficient for Blue band
-                    'C2': 7.5,   # Coefficient for Red band
-                    'G': 2.5     # Gain factor
-                }
-            ).rename("EVI")
+                "2.5 * ((B8 - B4) / (B8 + 6 * B4 - 7.5 * B2 + 10000))",
+                {'B8': image.select('B8'), 'B4': image.select('B4'), 'B2': image.select('B2')}
+            ).rename('EVI')
             return evi
-        elif parameter == "NDWI":
-            ndwi = image.normalizedDifference(['B3', 'B8'])  # Green and NIR bands for NDWI
-            return ndwi.rename("NDWI")
-        elif parameter == "SAVI":
-            savi = image.expression(
-                '((B8 - B4) * (1 + L)) / (B8 + B4 + L)',
-                {
-                    'B8': image.select('B8'),  # NIR band
-                    'B4': image.select('B4'),  # Red band
-                    'L': 0.5  # Soil brightness correction factor
-                }
-            ).rename("SAVI")
-            return savi
-        elif parameter == "NDSI":
-            ndsi = image.normalizedDifference(['B3', 'B11'])  # Green and SWIR for NDSI
-            return ndsi.rename("NDSI")
-        elif parameter == "MNDWI":
-            mndwi = image.normalizedDifference(['B3', 'B11'])  # Green and SWIR for MNDWI
-            return mndwi.rename("MNDWI")
+        # Add other indices here following a similar approach
         else:
-            return image  # Default to Level1
+            # For "Level 1", just return the default RGB bands
+            return image.select(['B4', 'B3', 'B2'])
 
     if total_count > 0:
         st.divider()
@@ -195,8 +180,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
         with col1:
             st.subheader("2. Manual Frame Scrubber")
-            
-            # Ensure that the frame index is within the bounds of the collection
             if "frame_idx" not in st.session_state or st.session_state.frame_idx < 1:
                 st.session_state.frame_idx = 1
             elif st.session_state.frame_idx > total_count:
@@ -207,47 +190,37 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Use the frame index to get the image from the collection
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
-
-            # Apply the selected parameter (e.g., NDVI, EVI)
-            selected_img = apply_parameter(selected_img, st.session_state.parameter)
-
+            
             # Extract the date and time of acquisition
             frame_date, frame_time = get_frame_date(selected_img)
             st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
 
-            vis = {"bands": [st.session_state.parameter], "min": -1, "max": 1}  # Visualization settings
-
-            map_id = selected_img.clip(roi).getMapId(vis)
-
-            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+            result = compute_index(selected_img, st.session_state.index)
+            result = result.visualize(min=-1, max=1, palette=['blue', 'white', 'green'])  # Visualization parameters
+            map_id = result.getMapId({'min': -1, 'max': 1, 'palette': ['blue', 'white', 'green']})
+            frame_map = folium.Map(location=[sum(lats) / len(lats), sum(lons) / len(lons)], zoom_start=12)
             folium.TileLayer(
-                tiles=map_id["tile_fetcher"].url_format,
+                tiles=map_id['tile_fetcher'].url_format,
                 attr="Google Earth Engine",
                 overlay=True,
                 control=False
             ).add_to(frame_map)
-            
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
 
         with col2:
-            st.subheader("3. Export Timelapse")
-            fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
-
-            if st.button("🎬 Generate Animated Video"):
-                with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: apply_parameter(img, st.session_state.parameter).visualize(**vis).clip(roi))
-                    
-                    try:
-                        video_url = video_collection.getVideoThumbURL({
-                            'dimensions': 400,  # Adjust dimensions to your needs
-                            'region': roi,
-                            'framesPerSecond': fps,
-                            'crs': 'EPSG:3857'
-                        })
-
-                        # Display the generated timelapse video with frame-specific date and time
-                        st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                        st.markdown(f"[📥 Download GIF]({video_url})")
-
-                    except Exception as e:
-                        st.error(f"Error generating video: {e}")
+            st.subheader("3. Generate Timelapse")
+            if timelapse_button:
+                st.spinner("Generating Timelapse...")
+                video_collection = collection.map(lambda img: compute_index(img, st.session_state.index).visualize(min=-1, max=1, palette=['blue', 'white', 'green']))
+                
+                try:
+                    video_url = video_collection.getVideoThumbURL({
+                        'dimensions': 400,
+                        'region': roi,
+                        'framesPerSecond': fps,
+                        'crs': 'EPSG:3857'
+                    })
+                    st.image(video_url, caption="Generated Timelapse", use_container_width=True)
+                    st.markdown(f"[📥 Download GIF]({video_url})")
+                except Exception as e:
+                    st.error(f"Error generating video: {e}")
