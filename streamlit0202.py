@@ -132,8 +132,10 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     def get_frame_date(image):
         """Extracts the acquisition date."""
         timestamp = ee.Date(image.get("system:time_start"))
-        formatted_date = timestamp.format("YYYY-MM-dd")  # Date
-        formatted_time = timestamp.format("HH:mm:ss")  # Time
+        timestamp_seconds = timestamp.millis().divide(1000)  # Convert to seconds
+        timestamp_python = datetime.utcfromtimestamp(timestamp_seconds.getInfo())  # Convert to Python datetime
+        formatted_date = timestamp_python.strftime('%Y-%m-%d')  # Format date
+        formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
         return formatted_date, formatted_time
 
     if total_count > 0:
@@ -171,8 +173,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 overlay=True,
                 control=False
             ).add_to(frame_map)
-
-            # Display the map with the selected frame
+            
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
 
         with col2:
@@ -181,7 +182,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    # Generate video URL with date and time displayed for each frame
                     video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
                     
                     try:
