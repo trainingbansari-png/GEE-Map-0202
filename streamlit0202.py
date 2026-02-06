@@ -5,7 +5,6 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
-import requests
 import numpy as np
 from io import BytesIO
 from PIL import Image
