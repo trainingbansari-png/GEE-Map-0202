@@ -146,11 +146,14 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         ])
         
         # Annotate the image with the date and time label
+        # Make sure it's bold red and placed at the top-center of the image
         painted_image = image.paint(
             feature_collection,
-            color='black',
-            width=2
+            color='red',
+            width=4
         )
+        
+        # We will overlay text directly onto the image with 'paint'
         return painted_image
 
     if total_count > 0:
