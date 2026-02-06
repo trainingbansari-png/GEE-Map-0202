@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import ee
 import folium
@@ -5,9 +6,6 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
-import numpy as np
-from io import BytesIO
-from PIL import Image
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -132,15 +130,11 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     def get_frame_date(image):
         """Extracts the acquisition date."""
         timestamp = ee.Date(image.get("system:time_start"))
-        formatted_date = timestamp.format('YYYY-MM-dd')  # Format date in Earth Engine
-        formatted_time = timestamp.format('HH:mm:ss')  # Format time in Earth Engine
+        timestamp_seconds = timestamp.millis().divide(1000)  # Convert to seconds
+        timestamp_python = datetime.utcfromtimestamp(timestamp_seconds.getInfo())  # Convert to Python datetime
+        formatted_date = timestamp_python.strftime('%Y-%m-%d')  # Format date
+        formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
         return formatted_date, formatted_time
-
-    def add_time_to_image(image, formatted_date, formatted_time):
-        """Adds time and date information to the image."""
-        text = formatted_date + " | " + formatted_time
-        annotated_image = image.visualize(bands=['B4', 'B3', 'B2'], min=0, max=3000)  # Use Sentinel-2 RGB bands
-        return annotated_image.set('time_text', text)
 
     if total_count > 0:
         st.divider()
@@ -160,17 +154,15 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Use the frame index to get the image from the collection
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
-           
-            # Get the acquisition date and time
+            
+            # Extract the date and time of acquisition
             frame_date, frame_time = get_frame_date(selected_img)
-            st.caption(f"Showing Frame {frame_idx} | Date: {frame_date} | Time: {frame_time}")
-
-            selected_img_with_time = add_time_to_image(selected_img, frame_date, frame_time)
+            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
 
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
-           
-            map_id = selected_img_with_time.clip(roi).getMapId(vis)
+
+            map_id = selected_img.clip(roi).getMapId(vis)
 
             frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
             folium.TileLayer(
@@ -180,8 +172,14 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 control=False
             ).add_to(frame_map)
             
-            # Properly closed parenthesis for st_folium
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+
+            # Auto-Play Logic (auto-advancing the slider)
+            if st.session_state.is_playing:
+                time.sleep(1)  # Delay for 1 second between each frame
+                st.session_state.frame_idx += 1
+                if st.session_state.frame_idx > total_count:
+                    st.session_state.frame_idx = 1
 
         with col2:
             st.subheader("3. Export Timelapse")
@@ -189,20 +187,27 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: add_time_to_image(img, *get_frame_date(img))
-                                                      .visualize(**vis).clip(roi))
+                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
-                            'dimensions': 400,  # Reduced size
+                            'dimensions': 400,  # Adjust dimensions to your needs
                             'region': roi,
                             'framesPerSecond': fps,
                             'crs': 'EPSG:3857'
                         })
 
-                        # Display the generated video with date and time info for each frame
-                        st.image(video_url, caption="Generated Timelapse | Date: {} | Time: {}".format(frame_date, frame_time), use_container_width=True)
+                        # Display the generated timelapse video with frame-specific date and time
+                        st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
                     except Exception as e:
                         st.error(f"Error generating video: {e}")
+
+        with col2:
+            # Auto-Play Button
+            if st.button("▶️ Play Timelapse"):
+                st.session_state.is_playing = True
+
+            if st.button("⏸️ Pause"):
+                st.session_state.is_playing = False
