@@ -132,25 +132,15 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     def get_frame_date(image):
         """Extracts the acquisition date."""
         timestamp = ee.Date(image.get("system:time_start"))
-        timestamp_seconds = timestamp.millis().divide(1000)  # Convert to seconds
-        timestamp_python = datetime.utcfromtimestamp(timestamp_seconds.getInfo())  # Convert to Python datetime
-        formatted_date = timestamp_python.strftime('%Y-%m-%d')  # Format date
-        formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
+        formatted_date = timestamp.format('YYYY-MM-dd')  # Format date in Earth Engine
+        formatted_time = timestamp.format('HH:mm:ss')  # Format time in Earth Engine
         return formatted_date, formatted_time
 
     def add_time_to_image(image, formatted_date, formatted_time):
         """Adds time and date information to the image."""
-        feature_collection = ee.FeatureCollection([ 
-            ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
-                'time': formatted_date + ' ' + formatted_time  # Concatenate date and time as a string
-            })
-        ])
-        painted_image = image.paint(
-            feature_collection,
-            color='red',  # Red color for visibility
-            width=2
-        )
-        return painted_image
+        text = formatted_date + " | " + formatted_time
+        annotated_image = image.visualize(bands=['B4', 'B3', 'B2'], min=0, max=3000)  # Use Sentinel-2 RGB bands
+        return annotated_image.set('time_text', text)
 
     if total_count > 0:
         st.divider()
