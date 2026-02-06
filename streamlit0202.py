@@ -1,4 +1,3 @@
-import time
 import streamlit as st
 import ee
 import folium
@@ -6,6 +5,9 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import numpy as np
+from io import BytesIO
+from PIL import Image
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -174,13 +176,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
 
-            # Auto-Play Logic (auto-advancing the slider)
-            if st.session_state.is_playing:
-                time.sleep(1)  # Delay for 1 second between each frame
-                st.session_state.frame_idx += 1
-                if st.session_state.frame_idx > total_count:
-                    st.session_state.frame_idx = 1
-
         with col2:
             st.subheader("3. Export Timelapse")
             fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
@@ -203,11 +198,3 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
                     except Exception as e:
                         st.error(f"Error generating video: {e}")
-
-        with col2:
-            # Auto-Play Button
-            if st.button("▶️ Play Timelapse"):
-                st.session_state.is_playing = True
-
-            if st.button("⏸️ Pause"):
-                st.session_state.is_playing = False
