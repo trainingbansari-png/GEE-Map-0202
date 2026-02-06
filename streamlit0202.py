@@ -130,7 +130,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     total_count = collection.size().getInfo()
 
     def get_frame_date(image):
-        """Extracts the acquisition date."""
+        """Extracts the acquisition date directly using Earth Engine's format function."""
         timestamp = ee.Date(image.get("system:time_start"))
         date = timestamp.format("YYYY-MM-dd")
         time = timestamp.format("HH:mm:ss")
