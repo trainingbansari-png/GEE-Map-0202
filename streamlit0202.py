@@ -129,31 +129,11 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
     total_count = collection.size().getInfo()
 
-    def add_time_to_image(image):
-        """Adds bold red text (date and time) to the top-center of the image."""
+    def get_frame_date(image):
+        """Extracts the acquisition date."""
         timestamp = ee.Date(image.get("system:time_start"))
-        
-        # Get both the formatted date and time directly from Earth Engine
         formatted_date = timestamp.format("YYYY-MM-dd")  # Date
-        formatted_time = timestamp.format("HH:mm:ss")  # Time
-        
-        # Create a feature collection with the formatted date and time
-        feature_collection = ee.FeatureCollection([ 
-            ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
-                'date': formatted_date,  # Store date as a property
-                'time': formatted_time   # Store time as a property
-            })
-        ])
-        
-        # Annotate the image with the date and time label in bold red text
-        painted_image = image.paint(
-            feature_collection,
-            color='red',  # Red color for text
-            width=4  # Bold text
-        )
-        
-        # We will overlay text directly onto the image with 'paint'
-        return painted_image
+        return formatted_date
 
     if total_count > 0:
         st.divider()
@@ -173,16 +153,16 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Use the frame index to get the image from the collection
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
-           
-            st.caption(f"Showing Frame {frame_idx}")
+            
+            # Extract the date of acquisition
+            frame_date = get_frame_date(selected_img).getInfo()
 
-            # Annotate the selected image with its timestamp
-            selected_img_with_time = add_time_to_image(selected_img)
+            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date}")
 
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
-           
-            map_id = selected_img_with_time.clip(roi).getMapId(vis)
+
+            map_id = selected_img.clip(roi).getMapId(vis)
 
             frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
             folium.TileLayer(
@@ -191,8 +171,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 overlay=True,
                 control=False
             ).add_to(frame_map)
-            
-            # Properly closed parenthesis for st_folium
+
+            # Display the map with the selected frame
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
 
         with col2:
@@ -201,9 +181,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    # Annotate images with date and time before creating the video
-                    video_collection = collection.map(lambda img: add_time_to_image(img)
-                                                       .visualize(**vis).clip(roi))
+                    # Generate video URL with the date displayed
+                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
@@ -212,7 +191,9 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                             'framesPerSecond': fps,
                             'crs': 'EPSG:3857'
                         })
-                        st.image(video_url, caption="Generated Timelapse", use_container_width=True)
+
+                        # Display the generated video and the corresponding date
+                        st.image(video_url, caption=f"Generated Timelapse | Date: {frame_date}", use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
                     except Exception as e:
