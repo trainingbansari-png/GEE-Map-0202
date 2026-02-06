@@ -134,13 +134,13 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         """Adds time information to the image."""
         timestamp = ee.Date(image.get("system:time_start"))
         
-        # Correct way to format the date within Earth Engine pipeline
+        # Use format on the server side (in Earth Engine)
         formatted_date = timestamp.format("YYYY-MM-dd")
         
-        # Create a feature collection to display the date as a label
+        # Return the formatted date (but we can't directly display it here)
         feature_collection = ee.FeatureCollection([ 
             ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
-                'time': formatted_date  # Store time as a property
+                'time': formatted_date  # Store the formatted time as a property
             })
         ])
         
@@ -171,9 +171,12 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
            
+            # Get and format the timestamp server-side (using format())
             ts = selected_img.get("system:time_start")
-            dt = ts.format("YYYY-MM-dd")  # Get the formatted date directly from Earth Engine
-            st.caption(f"Showing Frame {frame_idx} | Date: {dt.getInfo()}")  # Call getInfo() here for display
+            dt = ts.format("YYYY-MM-dd")  # Use Earth Engine's .format() for the date
+            
+            # Display the date in Streamlit (using getInfo() on the client-side)
+            st.caption(f"Showing Frame {frame_idx} | Date: {dt.getInfo()}")  # Call getInfo() for display
 
             # Annotate the selected image with its timestamp
             selected_img_with_time = add_time_to_image(selected_img)
