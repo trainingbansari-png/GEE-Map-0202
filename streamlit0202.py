@@ -14,7 +14,7 @@ st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing", "parameter"]:
     if k not in st.session_state:
         st.session_state[k] = None
 
@@ -24,6 +24,9 @@ if st.session_state.frame_idx is None:
 
 if st.session_state.is_playing is None:
     st.session_state.is_playing = False
+
+if st.session_state.parameter is None:
+    st.session_state.parameter = "Level1"
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -89,6 +92,13 @@ with st.sidebar:
         "Select Satellite",
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
+    
+    st.header("📊 Select Parameter")
+    parameter = st.selectbox(
+        "Choose the Parameter",
+        ["Level1", "NDVI", "EVI", "NDWI", "SAVI", "NDSI", "MNDWI"]
+    )
+    st.session_state.parameter = parameter
 
 # ---------------- Map Selection ----------------
 st.subheader("1. Select your Area")
@@ -138,13 +148,54 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
         return formatted_date, formatted_time
 
+    # Parameter Selection Logic (e.g., NDVI, EVI)
+    def apply_parameter(image, parameter):
+        if parameter == "NDVI":
+            ndvi = image.normalizedDifference(['B8', 'B4'])  # Red and NIR bands for NDVI
+            return ndvi.rename("NDVI")
+        elif parameter == "EVI":
+            evi = image.expression(
+                'G * ((B8 - B4) / (B8 + C1 * B4 - C2 * B3 + L))',
+                {
+                    'B8': image.select('B8'),  # NIR band
+                    'B4': image.select('B4'),  # Red band
+                    'B3': image.select('B3'),  # Blue band
+                    'L': 10000,  # Gain factor
+                    'C1': 6.0,   # Coefficient for Blue band
+                    'C2': 7.5,   # Coefficient for Red band
+                    'G': 2.5     # Gain factor
+                }
+            ).rename("EVI")
+            return evi
+        elif parameter == "NDWI":
+            ndwi = image.normalizedDifference(['B3', 'B8'])  # Green and NIR bands for NDWI
+            return ndwi.rename("NDWI")
+        elif parameter == "SAVI":
+            savi = image.expression(
+                '((B8 - B4) * (1 + L)) / (B8 + B4 + L)',
+                {
+                    'B8': image.select('B8'),  # NIR band
+                    'B4': image.select('B4'),  # Red band
+                    'L': 0.5  # Soil brightness correction factor
+                }
+            ).rename("SAVI")
+            return savi
+        elif parameter == "NDSI":
+            ndsi = image.normalizedDifference(['B3', 'B11'])  # Green and SWIR for NDSI
+            return ndsi.rename("NDSI")
+        elif parameter == "MNDWI":
+            mndwi = image.normalizedDifference(['B3', 'B11'])  # Green and SWIR for MNDWI
+            return mndwi.rename("MNDWI")
+        else:
+            return image  # Default to Level1
+
     if total_count > 0:
         st.divider()
         col1, col2 = st.columns([1, 1])
 
         with col1:
             st.subheader("2. Manual Frame Scrubber")
-
+            
             # Ensure that the frame index is within the bounds of the collection
             if "frame_idx" not in st.session_state or st.session_state.frame_idx < 1:
                 st.session_state.frame_idx = 1
@@ -157,12 +208,14 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
 
+            # Apply the selected parameter (e.g., NDVI, EVI)
+            selected_img = apply_parameter(selected_img, st.session_state.parameter)
+
             # Extract the date and time of acquisition
             frame_date, frame_time = get_frame_date(selected_img)
             st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
 
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
-                  else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
+            vis = {"bands": [st.session_state.parameter], "min": -1, "max": 1}  # Visualization settings
 
             map_id = selected_img.clip(roi).getMapId(vis)
 
@@ -173,7 +226,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 overlay=True,
                 control=False
             ).add_to(frame_map)
-
+            
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
 
         with col2:
@@ -182,8 +235,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
-
+                    video_collection = collection.map(lambda img: apply_parameter(img, st.session_state.parameter).visualize(**vis).clip(roi))
+                    
                     try:
                         video_url = video_collection.getVideoThumbURL({
                             'dimensions': 400,  # Adjust dimensions to your needs
