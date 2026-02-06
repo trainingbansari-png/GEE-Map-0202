@@ -6,11 +6,10 @@ from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
 import numpy as np
-import time
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Satellite Data Viewer")
-st.title("🌍 GEE Satellite Data Viewer & Timelapse Generator")
+st.title("🌍 GEE Satellite Data Viewer")
 
 # ---------------- Session State ----------------
 for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing", "index"]:
@@ -99,11 +98,6 @@ with st.sidebar:
     )
     st.session_state.index = parameter  # Store selected parameter
 
-    # Timelapse options
-    st.header("🎬 Timelapse Settings")
-    fps = st.slider("Frames per second", 1, 30, 10)
-    timelapse_button = st.button("Generate Timelapse")
-
 # ---------------- Map Selection ----------------
 st.subheader("1. Select your Area")
 m = folium.Map(location=[22.0, 69.0], zoom_start=6)
@@ -180,6 +174,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
         with col1:
             st.subheader("2. Manual Frame Scrubber")
+            
+            # Ensure that the frame index is within the bounds of the collection
             if "frame_idx" not in st.session_state or st.session_state.frame_idx < 1:
                 st.session_state.frame_idx = 1
             elif st.session_state.frame_idx > total_count:
@@ -191,36 +187,24 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
             
-            # Extract the date and time of acquisition
-            frame_date, frame_time = get_frame_date(selected_img)
-            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
-
+            # Compute the selected index (e.g., NDVI, NDWI, etc.)
             result = compute_index(selected_img, st.session_state.index)
-            result = result.visualize(min=-1, max=1, palette=['blue', 'white', 'green'])  # Visualization parameters
-            map_id = result.getMapId({'min': -1, 'max': 1, 'palette': ['blue', 'white', 'green']})
-            frame_map = folium.Map(location=[sum(lats) / len(lats), sum(lons) / len(lons)], zoom_start=12)
-            folium.TileLayer(
-                tiles=map_id['tile_fetcher'].url_format,
-                attr="Google Earth Engine",
-                overlay=True,
-                control=False
-            ).add_to(frame_map)
-            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+            
+            # Create the visualization parameters
+            vis_params = {
+                'min': -1, 'max': 1, 'palette': ['blue', 'white', 'green']  # Adjust for each parameter
+            }
 
-        with col2:
-            st.subheader("3. Generate Timelapse")
-            if timelapse_button:
-                st.spinner("Generating Timelapse...")
-                video_collection = collection.map(lambda img: compute_index(img, st.session_state.index).visualize(min=-1, max=1, palette=['blue', 'white', 'green']))
-                
-                try:
-                    video_url = video_collection.getVideoThumbURL({
-                        'dimensions': 400,
-                        'region': roi,
-                        'framesPerSecond': fps,
-                        'crs': 'EPSG:3857'
-                    })
-                    st.image(video_url, caption="Generated Timelapse", use_container_width=True)
-                    st.markdown(f"[📥 Download GIF]({video_url})")
-                except Exception as e:
-                    st.error(f"Error generating video: {e}")
+            # Generate map for the result
+            try:
+                map_id = result.getMapId(vis_params)
+                frame_map = folium.Map(location=[sum(lats) / len(lats), sum(lons) / len(lons)], zoom_start=12)
+                folium.TileLayer(
+                    tiles=map_id["tile_fetcher"].url_format,
+                    attr="Google Earth Engine",
+                    overlay=True,
+                    control=False
+                ).add_to(frame_map)
+                st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+            except Exception as e:
+                st.error(f"Error generating map: {e}")
