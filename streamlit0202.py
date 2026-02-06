@@ -5,11 +5,10 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
-import numpy as np
 
 # ---------------- Page Config ----------------
-st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
-st.title("🌍 GEE Satellite Video Generator")
+st.set_page_config(layout="wide", page_title="GEE Satellite Viewer")
+st.title("🌍 GEE Satellite Viewer and Timelapse Generator")
 
 # ---------------- Session State ----------------
 for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
@@ -162,26 +161,19 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 {'NIR': image.select('B8'), 'RED': image.select('B4')}
             )
         elif selected_index == "AWEI":
-            return image.normalizedDifference(['B11', 'B3'])  # Add the correct bands for AWEI
-        elif selected_index == "MNDWI":
-            return image.normalizedDifference(['B3', 'B11'])  # Modify according to MNDWI bands
-        elif selected_index == "NBR":
-            return image.normalizedDifference(['B8', 'B12'])  # Modify according to NBR bands
-        elif selected_index == "LAI":
-            return image.expression('exp(0.9 * (B8 - B4))', {'B8': image.select('B8'), 'B4': image.select('B4')})
-        elif selected_index == "FVC":
-            return image.expression('0.1 * (B8 - B4)', {'B8': image.select('B8'), 'B4': image.select('B4')})
-        elif selected_index == "BGC":
-            return image.normalizedDifference(['B8', 'B11'])  # Modify as needed
-        elif selected_index == "GNDVI":
-            return image.normalizedDifference(['B8', 'B3'])  # Modify as needed
-        # For Level 1, return the base image
-        elif selected_index == "Level 1":
-            return image
+            return image.expression(
+                '((SWIR1 + SWIR2 + BLUE) - (RED + NIR)) / 2',
+                {'SWIR1': image.select('B11'), 'SWIR2': image.select('B8'), 'BLUE': image.select('B2'),
+                 'RED': image.select('B4'), 'NIR': image.select('B8')}
+            )
+        # Add other indices here...
+        else:
+            return image  # For Level 1 data, return the original image
 
-    # Visualization parameters for different indices
-    vis_params = {"min": -1, "max": 1, "palette": ["blue", "white", "green"]}
+    # Apply the index computation based on the selected parameter
+    image_with_index = collection.map(lambda img: compute_index(img, index))
 
+    # Display image
     if total_count > 0:
         st.divider()
         col1, col2 = st.columns([1, 1])
@@ -198,23 +190,25 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             frame_idx = st.slider("Slide to 'play' through time", 1, total_count, st.session_state.frame_idx)
 
             # Use the frame index to get the image from the collection
-            img_list = collection.toList(total_count)
+            img_list = image_with_index.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
             
-            # Compute the selected index
-            result = compute_index(selected_img, index)
+            # Extract the date and time of acquisition
+            frame_date, frame_time = get_frame_date(selected_img)
+            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
 
-            # Process and display the result
-            if isinstance(result, ee.Image):
-                map_id = result.getMapId(vis_params)
-                frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
-                folium.TileLayer(
-                    tiles=map_id["tile_fetcher"].url_format,
-                    attr="Google Earth Engine",
-                    overlay=True,
-                    control=False
-                ).add_to(frame_map)
-                st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+            vis_params = {"min": 0, "max": 0.3, "bands": ["NDVI"]}  # Update according to the selected parameter
+            map_id = selected_img.getMapId(vis_params)
+
+            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+            folium.TileLayer(
+                tiles=map_id['tile_fetcher'].url_format,
+                attr="Google Earth Engine",
+                overlay=True,
+                control=False
+            ).add_to(frame_map)
+            
+            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
 
         with col2:
             st.subheader("3. Export Timelapse")
@@ -222,7 +216,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: compute_index(img, index))
+                    video_collection = image_with_index.map(lambda img: img.visualize(**vis_params).clip(roi))
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
@@ -232,7 +226,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                             'crs': 'EPSG:3857'
                         })
 
-                        # Display the generated timelapse video
+                        # Display the generated timelapse video with frame-specific date and time
                         st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
