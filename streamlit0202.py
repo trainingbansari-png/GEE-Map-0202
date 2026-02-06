@@ -6,35 +6,34 @@ from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
 import numpy as np
-from io import BytesIO
-from PIL import Image
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing", "image_dict"]:
     if k not in st.session_state:
         st.session_state[k] = None
 
-# Initialize `frame_idx` and `is_playing` if not set already
 if st.session_state.frame_idx is None:
     st.session_state.frame_idx = 1
 
 if st.session_state.is_playing is None:
     st.session_state.is_playing = False
 
+if st.session_state.image_dict is None:
+    st.session_state.image_dict = {}
+
 # ---------------- EE Init ----------------
 def initialize_ee():
     try:
-        # Authenticate and initialize Earth Engine
         service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
             scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
         )
-        ee.Initialize(credentials)  # Initialize Earth Engine with service account credentials
+        ee.Initialize(credentials)
         st.success("Earth Engine initialized successfully.")
     except Exception as e:
         st.error(f"Error initializing Earth Engine: {e}")
@@ -123,20 +122,45 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     collection = (ee.ImageCollection(collection_ids[satellite])
                   .filterBounds(roi)
                   .filterDate(str(start_date), str(end_date))
-                  .map(lambda img: mask_clouds(img, satellite))  # Map with cloud masking
+                  .map(lambda img: mask_clouds(img, satellite))
                   .sort("system:time_start")
-                  .limit(30))  # Limit to a smaller number of frames (e.g., 30)
+                  .limit(30))
 
     total_count = collection.size().getInfo()
 
     def get_frame_date(image):
         """Extracts the acquisition date."""
         timestamp = ee.Date(image.get("system:time_start"))
-        timestamp_seconds = timestamp.millis().divide(1000)  # Convert to seconds
-        timestamp_python = datetime.utcfromtimestamp(timestamp_seconds.getInfo())  # Convert to Python datetime
-        formatted_date = timestamp_python.strftime('%Y-%m-%d')  # Format date
-        formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
+        timestamp_seconds = timestamp.millis().divide(1000)
+        timestamp_python = datetime.utcfromtimestamp(timestamp_seconds.getInfo())
+        formatted_date = timestamp_python.strftime('%Y-%m-%d')
+        formatted_time = timestamp_python.strftime('%H:%M:%S')
         return formatted_date, formatted_time
+
+    def add_date_time_overlay(image):
+        """Add the date and time overlay to each image."""
+        date, time = get_frame_date(image)
+        date_time_text = ee.String(date).cat(ee.String(" | ").cat(time))
+        
+        vis = {
+            "bands": ["B4", "B3", "B2"],
+            "min": 0,
+            "max": 3000
+        }
+        
+        image_with_text = image.visualize(**vis).set({'text': date_time_text})
+        return image_with_text
+
+    # Creating a dictionary with images and corresponding dates
+    image_dict = {}
+    img_list = collection.toList(total_count)
+    
+    for i in range(total_count):
+        img = ee.Image(img_list.get(i))
+        date, time = get_frame_date(img)
+        image_dict[i] = {"image": img, "date": f"{date} {time}"}
+    
+    st.session_state.image_dict = image_dict  # Save it in session state
 
     if total_count > 0:
         st.divider()
@@ -145,7 +169,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         with col1:
             st.subheader("2. Manual Frame Scrubber")
             
-            # Ensure that the frame index is within the bounds of the collection
             if "frame_idx" not in st.session_state or st.session_state.frame_idx < 1:
                 st.session_state.frame_idx = 1
             elif st.session_state.frame_idx > total_count:
@@ -153,17 +176,12 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             frame_idx = st.slider("Slide to 'play' through time", 1, total_count, st.session_state.frame_idx)
 
-            # Use the frame index to get the image from the collection
-            img_list = collection.toList(total_count)
-            selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
+            selected_img = image_dict[frame_idx - 1]["image"]
+            frame_date = image_dict[frame_idx - 1]["date"]
             
-            # Extract the date and time of acquisition
-            frame_date, frame_time = get_frame_date(selected_img)
-            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
+            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date}")
 
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
-                  else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
-
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
             map_id = selected_img.clip(roi).getMapId(vis)
 
             frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
@@ -186,7 +204,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
-                            'dimensions': 400,  # Adjust dimensions to your needs
+                            'dimensions': 400,
                             'region': roi,
                             'framesPerSecond': fps,
                             'crs': 'EPSG:3857'
