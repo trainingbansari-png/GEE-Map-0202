@@ -176,6 +176,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             frame_idx = st.slider("Slide to 'play' through time", 1, total_count, st.session_state.frame_idx)
 
+            # Fetch image and date from the dictionary
             selected_img = image_dict[frame_idx - 1]["image"]
             frame_date = image_dict[frame_idx - 1]["date"]
             
@@ -200,7 +201,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
+                    video_collection = collection.map(add_date_time_overlay)
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
@@ -210,7 +211,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                             'crs': 'EPSG:3857'
                         })
 
-                        # Display the generated timelapse video with frame-specific date and time
+                        # Display the generated timelapse video
                         st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
