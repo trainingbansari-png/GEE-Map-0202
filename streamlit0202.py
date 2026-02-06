@@ -134,15 +134,9 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         """Adds time information to the image."""
         timestamp = ee.Date(image.get("system:time_start"))
         
-        # Retrieve timestamp in seconds safely
-        timestamp_seconds = timestamp.getInfo()
+        # Get the formatted date directly from Earth Engine
+        formatted_date = timestamp.format("YYYY-MM-dd")  # Using Earth Engine's internal formatting
         
-        if timestamp_seconds is None:
-            raise ValueError("Timestamp retrieval failed. The system:time_start attribute may not be present.")
-        
-        # Convert the timestamp to a readable date format using Python's datetime module
-        formatted_date = datetime.utcfromtimestamp(timestamp_seconds / 1000).strftime('%Y-%m-%d')
-
         # Create a feature collection with the formatted date
         feature_collection = ee.FeatureCollection([ 
             ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
@@ -177,7 +171,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
            
-            ts = selected_img.get("system:time_start")
             st.caption(f"Showing Frame {frame_idx}")
 
             # Annotate the selected image with its timestamp
