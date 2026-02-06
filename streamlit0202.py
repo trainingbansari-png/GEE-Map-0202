@@ -134,11 +134,16 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         """Adds time information to the image."""
         timestamp = ee.Date(image.get("system:time_start"))
         
-        # Extract timestamp and convert to readable format on the client-side (Streamlit)
-        timestamp_seconds = timestamp.getInfo()  # Get timestamp in seconds
+        # Retrieve timestamp in seconds safely
+        timestamp_seconds = timestamp.getInfo()
+        
+        if timestamp_seconds is None:
+            raise ValueError("Timestamp retrieval failed. The system:time_start attribute may not be present.")
+        
+        # Convert the timestamp to a readable date format using Python's datetime module
         formatted_date = datetime.utcfromtimestamp(timestamp_seconds / 1000).strftime('%Y-%m-%d')
 
-        # Create a feature collection to display the date as a label
+        # Create a feature collection with the formatted date
         feature_collection = ee.FeatureCollection([ 
             ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
                 'time': formatted_date  # Store time as a property
