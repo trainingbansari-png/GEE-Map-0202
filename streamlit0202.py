@@ -167,6 +167,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             dt = datetime.utcfromtimestamp(ts / 1000).strftime('%Y-%m-%d')
             st.caption(f"Showing Frame {frame_idx} | Date: {dt}")
 
+            # Annotate the selected image with its timestamp
             selected_img_with_time = add_time_to_image(selected_img, dt)
 
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
@@ -191,7 +192,9 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
+                    # Annotate images with time before creating the video
+                    video_collection = collection.map(lambda img: add_time_to_image(img, datetime.utcfromtimestamp(img.get("system:time_start").getInfo() / 1000).strftime('%Y-%m-%d'))
+                                                       .visualize(**vis).clip(roi))
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
