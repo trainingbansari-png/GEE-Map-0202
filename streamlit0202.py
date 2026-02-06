@@ -5,10 +5,13 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import numpy as np
+from io import BytesIO
+from PIL import Image
 
 # ---------------- Page Config ----------------
-st.set_page_config(layout="wide", page_title="GEE Satellite Index Generator")
-st.title("🌍 GEE Satellite Index Generator")
+st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
+st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
 for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
@@ -87,11 +90,10 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
-    # Add a dropdown to select the index/parameter to calculate
+    st.header("📊 Index Selection")
     index = st.selectbox(
-        "Select Index/Level",
-        ["Level 1", "NDVI", "NDWI", "NDMI", "EVI", "SAVI", "GNDVI", "MNDWI", 
-         "Tasseled Cap (Brightness)", "Tasseled Cap (Greenness)", "Tasseled Cap (Wetness)", "BRI", "LST"]
+        "Select Parameter",
+        ["Level 1", "NDVI", "NDWI", "NDMI", "EVI", "SAVI", "AWEI", "MNDWI", "NBR", "LAI", "FVC", "BGC", "GNDVI"]
     )
 
 # ---------------- Map Selection ----------------
@@ -160,7 +162,20 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 '(NIR - RED) / (NIR + RED + 0.5) * (1 + 0.5)',
                 {'NIR': image.select('B8'), 'RED': image.select('B4')}
             )
-        # Add other indices here as needed
+        elif selected_index == "AWEI":
+            return image.normalizedDifference(['B11', 'B3'])  # Add the correct bands for AWEI
+        elif selected_index == "MNDWI":
+            return image.normalizedDifference(['B3', 'B11'])  # Modify according to MNDWI bands
+        elif selected_index == "NBR":
+            return image.normalizedDifference(['B8', 'B12'])  # Modify according to NBR bands
+        elif selected_index == "LAI":
+            return image.expression('exp(0.9 * (B8 - B4))', {'B8': image.select('B8'), 'B4': image.select('B4')})
+        elif selected_index == "FVC":
+            return image.expression('0.1 * (B8 - B4)', {'B8': image.select('B8'), 'B4': image.select('B4')})
+        elif selected_index == "BGC":
+            return image.normalizedDifference(['B8', 'B11'])  # Modify as needed
+        elif selected_index == "GNDVI":
+            return image.normalizedDifference(['B8', 'B3'])  # Modify as needed
         # For Level 1, return the base image
         elif selected_index == "Level 1":
             return image
@@ -187,19 +202,22 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Compute the selected index
             result = compute_index(selected_img, index)
 
-            # Visualize the result
-            vis_params = {"min": -1, "max": 1, "palette": ["blue", "white", "green"]}  # Adjust for each index
-            map_id = result.getMapId(vis_params)
+            # Check if result is a valid ee.Image
+            if isinstance(result, ee.Image):
+                vis_params = {"min": -1, "max": 1, "palette": ["blue", "white", "green"]}  # Adjust for each index
+                map_id = result.getMapId(vis_params)
 
-            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
-            folium.TileLayer(
-                tiles=map_id["tile_fetcher"].url_format,
-                attr="Google Earth Engine",
-                overlay=True,
-                control=False
-            ).add_to(frame_map)
-            
-            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+                frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+                folium.TileLayer(
+                    tiles=map_id["tile_fetcher"].url_format,
+                    attr="Google Earth Engine",
+                    overlay=True,
+                    control=False
+                ).add_to(frame_map)
+                
+                st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+            else:
+                st.error("Error: The computed result is not a valid image.")
 
         with col2:
             st.subheader("3. Export Timelapse")
