@@ -6,6 +6,7 @@ from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
 import numpy as np
+import moviepy.editor as mpy  # This is for creating the video
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Satellite Data Viewer")
@@ -173,45 +174,28 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         col1, col2 = st.columns([1, 1])
 
         with col1:
-            st.subheader("2. Manual Frame Scrubber")
-            
-            # Ensure that the frame index is within the bounds of the collection
-            if "frame_idx" not in st.session_state or st.session_state.frame_idx < 1:
-                st.session_state.frame_idx = 1
-            elif st.session_state.frame_idx > total_count:
-                st.session_state.frame_idx = total_count
+            st.subheader("2. Generate Timelapse Video")
 
-            frame_idx = st.slider("Slide to 'play' through time", 1, total_count, st.session_state.frame_idx)
-
-            # Use the frame index to get the image from the collection
-            img_list = collection.toList(total_count)
-            selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
-            
-            # Compute the selected index (e.g., NDVI, NDWI, etc.)
-            result = compute_index(selected_img, st.session_state.index)
-            
-            # Check if the result is single band (e.g., NDVI)
-            if result.bandNames().size().getInfo() == 1:
-                # Apply palette only if it's a single-band result
+            # Prepare images for video
+            images_for_video = []
+            for i in range(total_count):
+                img = ee.Image(collection.toList(total_count).get(i))
+                result = compute_index(img, st.session_state.index)
+                
+                # Generate a thumbnail URL for each image
                 vis_params = {
-                    'min': -1, 'max': 1, 'palette': ['blue', 'white', 'green']  # Adjust for each parameter
+                    'min': -1, 'max': 1, 'palette': ['blue', 'white', 'green']
                 }
-            else:
-                # For multi-band images (e.g., RGB), no palette needed
-                vis_params = {
-                    'min': 0, 'max': 3000
-                }
-
-            # Generate map for the result
-            try:
                 map_id = result.getMapId(vis_params)
-                frame_map = folium.Map(location=[sum(lats) / len(lats), sum(lons) / len(lons)], zoom_start=12)
-                folium.TileLayer(
-                    tiles=map_id["tile_fetcher"].url_format,
-                    attr="Google Earth Engine",
-                    overlay=True,
-                    control=False
-                ).add_to(frame_map)
-                st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
-            except Exception as e:
-                st.error(f"Error generating map: {e}")
+                thumbnail_url = map_id["tile_fetcher"].url_format
+
+                images_for_video.append(thumbnail_url)
+            
+            # Use moviepy to create video from the images
+            video_file_path = "timelapse_video.mp4"
+            video_clips = [mpy.ImageClip(img).set_duration(0.5) for img in images_for_video]
+            video = mpy.concatenate_videoclips(video_clips, method="compose")
+            video.write_videofile(video_file_path, fps=24)
+
+            # Display the video in Streamlit
+            st.video(video_file_path)
