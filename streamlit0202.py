@@ -190,10 +190,17 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Compute the selected index (e.g., NDVI, NDWI, etc.)
             result = compute_index(selected_img, st.session_state.index)
             
-            # Create the visualization parameters
-            vis_params = {
-                'min': -1, 'max': 1, 'palette': ['blue', 'white', 'green']  # Adjust for each parameter
-            }
+            # Check if the result is single band (e.g., NDVI)
+            if result.bandNames().size().getInfo() == 1:
+                # Apply palette only if it's a single-band result
+                vis_params = {
+                    'min': -1, 'max': 1, 'palette': ['blue', 'white', 'green']  # Adjust for each parameter
+                }
+            else:
+                # For multi-band images (e.g., RGB), no palette needed
+                vis_params = {
+                    'min': 0, 'max': 3000
+                }
 
             # Generate map for the result
             try:
