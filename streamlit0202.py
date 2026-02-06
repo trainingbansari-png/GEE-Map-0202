@@ -134,7 +134,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         """Adds time information to the image."""
         timestamp = ee.Date(image.get("system:time_start"))
         
-        # Using the format method inside the Earth Engine pipeline to format the date
+        # Correct way to format the date within Earth Engine pipeline
         formatted_date = timestamp.format("YYYY-MM-dd")
         
         # Create a feature collection to display the date as a label
