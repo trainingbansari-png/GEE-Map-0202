@@ -5,35 +5,33 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
-import numpy as np
 
 # ---------------- Page Config ----------------
-st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
-st.title("🌍 GEE Satellite Video Generator")
+st.set_page_config(layout="wide", page_title="GEE Satellite Index Generator")
+st.title("🌍 GEE Satellite Index Generator")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing", "image_dict"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
     if k not in st.session_state:
         st.session_state[k] = None
 
+# Initialize `frame_idx` and `is_playing` if not set already
 if st.session_state.frame_idx is None:
     st.session_state.frame_idx = 1
 
 if st.session_state.is_playing is None:
     st.session_state.is_playing = False
 
-if st.session_state.image_dict is None:
-    st.session_state.image_dict = {}
-
 # ---------------- EE Init ----------------
 def initialize_ee():
     try:
+        # Authenticate and initialize Earth Engine
         service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
             scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
         )
-        ee.Initialize(credentials)
+        ee.Initialize(credentials)  # Initialize Earth Engine with service account credentials
         st.success("Earth Engine initialized successfully.")
     except Exception as e:
         st.error(f"Error initializing Earth Engine: {e}")
@@ -89,6 +87,13 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
+    # Add a dropdown to select the index/parameter to calculate
+    index = st.selectbox(
+        "Select Index/Level",
+        ["Level 1", "NDVI", "NDWI", "NDMI", "EVI", "SAVI", "GNDVI", "MNDWI", 
+         "Tasseled Cap (Brightness)", "Tasseled Cap (Greenness)", "Tasseled Cap (Wetness)", "BRI", "LST"]
+    )
+
 # ---------------- Map Selection ----------------
 st.subheader("1. Select your Area")
 m = folium.Map(location=[22.0, 69.0], zoom_start=6)
@@ -122,31 +127,43 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     collection = (ee.ImageCollection(collection_ids[satellite])
                   .filterBounds(roi)
                   .filterDate(str(start_date), str(end_date))
-                  .map(lambda img: mask_clouds(img, satellite))
+                  .map(lambda img: mask_clouds(img, satellite))  # Map with cloud masking
                   .sort("system:time_start")
-                  .limit(30))
+                  .limit(30))  # Limit to a smaller number of frames (e.g., 30)
 
     total_count = collection.size().getInfo()
 
     def get_frame_date(image):
         """Extracts the acquisition date."""
         timestamp = ee.Date(image.get("system:time_start"))
-        timestamp_seconds = timestamp.millis().divide(1000)
-        timestamp_python = datetime.utcfromtimestamp(timestamp_seconds.getInfo())
-        formatted_date = timestamp_python.strftime('%Y-%m-%d')
-        formatted_time = timestamp_python.strftime('%H:%M:%S')
+        timestamp_seconds = timestamp.millis().divide(1000)  # Convert to seconds
+        timestamp_python = datetime.utcfromtimestamp(timestamp_seconds.getInfo())  # Convert to Python datetime
+        formatted_date = timestamp_python.strftime('%Y-%m-%d')  # Format date
+        formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
         return formatted_date, formatted_time
 
-    # Creating a dictionary with images and corresponding dates
-    image_dict = {}
-    img_list = collection.toList(total_count)
-    
-    for i in range(total_count):
-        img = ee.Image(img_list.get(i))
-        date, time = get_frame_date(img)
-        image_dict[i] = {"image": img, "date": f"{date} {time}"}
-    
-    st.session_state.image_dict = image_dict  # Save it in session state
+    def compute_index(image, selected_index):
+        """Compute the selected index."""
+        if selected_index == "NDVI":
+            return image.normalizedDifference(['B8', 'B4'])  # Sentinel-2 NIR - Red
+        elif selected_index == "NDWI":
+            return image.normalizedDifference(['B3', 'B11'])  # Sentinel-2 Green - SWIR
+        elif selected_index == "NDMI":
+            return image.normalizedDifference(['B8', 'B11'])  # Sentinel-2 NIR - SWIR
+        elif selected_index == "EVI":
+            return image.expression(
+                '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 10000))',
+                {'NIR': image.select('B8'), 'RED': image.select('B4'), 'BLUE': image.select('B2')}
+            )
+        elif selected_index == "SAVI":
+            return image.expression(
+                '(NIR - RED) / (NIR + RED + 0.5) * (1 + 0.5)',
+                {'NIR': image.select('B8'), 'RED': image.select('B4')}
+            )
+        # Add other indices here as needed
+        # For Level 1, return the base image
+        elif selected_index == "Level 1":
+            return image
 
     if total_count > 0:
         st.divider()
@@ -155,6 +172,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         with col1:
             st.subheader("2. Manual Frame Scrubber")
             
+            # Ensure that the frame index is within the bounds of the collection
             if "frame_idx" not in st.session_state or st.session_state.frame_idx < 1:
                 st.session_state.frame_idx = 1
             elif st.session_state.frame_idx > total_count:
@@ -162,14 +180,16 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             frame_idx = st.slider("Slide to 'play' through time", 1, total_count, st.session_state.frame_idx)
 
-            # Fetch image and date from the dictionary
-            selected_img = image_dict[frame_idx - 1]["image"]
-            frame_date = image_dict[frame_idx - 1]["date"]
+            # Use the frame index to get the image from the collection
+            img_list = collection.toList(total_count)
+            selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
             
-            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date}")
+            # Compute the selected index
+            result = compute_index(selected_img, index)
 
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-            map_id = selected_img.clip(roi).getMapId(vis)
+            # Visualize the result
+            vis_params = {"min": -1, "max": 1, "palette": ["blue", "white", "green"]}  # Adjust for each index
+            map_id = result.getMapId(vis_params)
 
             frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
             folium.TileLayer(
@@ -187,16 +207,17 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
+                    video_collection = collection.map(lambda img: compute_index(img, index))
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
-                            'dimensions': 400,
+                            'dimensions': 400,  # Adjust dimensions to your needs
                             'region': roi,
                             'framesPerSecond': fps,
                             'crs': 'EPSG:3857'
                         })
 
+                        # Display the generated timelapse video
                         st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
