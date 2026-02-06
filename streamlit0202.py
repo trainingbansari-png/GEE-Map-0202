@@ -131,20 +131,22 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     total_count = collection.size().getInfo()
 
     def add_time_to_image(image):
-        """Adds time information to the image."""
+        """Adds both date and time information to the image."""
         timestamp = ee.Date(image.get("system:time_start"))
         
-        # Get the formatted date directly from Earth Engine
-        formatted_date = timestamp.format("YYYY-MM-dd")  # Using Earth Engine's internal formatting
+        # Get both the formatted date and time directly from Earth Engine
+        formatted_date = timestamp.format("YYYY-MM-dd")  # Date
+        formatted_time = timestamp.format("HH:mm:ss")  # Time
         
-        # Create a feature collection with the formatted date
+        # Create a feature collection with the formatted date and time
         feature_collection = ee.FeatureCollection([ 
             ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
-                'time': formatted_date  # Store time as a property
+                'date': formatted_date,  # Store date as a property
+                'time': formatted_time   # Store time as a property
             })
         ])
         
-        # Annotate the image with the time label
+        # Annotate the image with the date and time label
         painted_image = image.paint(
             feature_collection,
             color='black',
@@ -198,7 +200,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    # Annotate images with time before creating the video
+                    # Annotate images with date and time before creating the video
                     video_collection = collection.map(lambda img: add_time_to_image(img)
                                                        .visualize(**vis).clip(roi))
                     
