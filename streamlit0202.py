@@ -178,12 +178,18 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
         with col2:
             st.subheader("3. Export Timelapse")
-            fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
+            fps = st.number_input("Frames Per Second", min_value=1, max_value=5, value=1)  # Slow down FPS
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
-                    
+                    def add_date_time_overlay(image):
+                        # Get date and time for the frame
+                        date, time = get_frame_date(image)
+                        # Add text annotation with date and time
+                        return image.visualize(**vis).set({'text': f"{date} | {time}"})
+
+                    video_collection = collection.map(add_date_time_overlay).clip(roi)
+
                     try:
                         video_url = video_collection.getVideoThumbURL({
                             'dimensions': 400,  # Adjust dimensions to your needs
