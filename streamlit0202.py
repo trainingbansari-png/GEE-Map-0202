@@ -5,22 +5,26 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import numpy as np
 
 # ---------------- Page Config ----------------
-st.set_page_config(layout="wide", page_title="GEE Satellite Viewer")
-st.title("🌍 GEE Satellite Viewer and Timelapse Generator")
+st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
+st.title("🌍 GEE Satellite Data Viewer")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing", "index"]:
     if k not in st.session_state:
         st.session_state[k] = None
 
-# Initialize `frame_idx` and `is_playing` if not set already
+# Initialize `frame_idx`, `is_playing`, and `index` if not set already
 if st.session_state.frame_idx is None:
     st.session_state.frame_idx = 1
 
 if st.session_state.is_playing is None:
     st.session_state.is_playing = False
+
+if st.session_state.index is None:
+    st.session_state.index = "Level 1"  # Default to Level 1
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -87,12 +91,12 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
-    st.header("📊 Select Parameter")
-    # Dropdown list with parameters including Level 1 (raw data)
-    index = st.selectbox(
-        "Select Index/Parameter",
-        ["Level 1", "NDVI", "NDWI", "NDMI", "EVI", "SAVI", "AWEI", "MNDWI", "NBR", "LAI", "FVC", "BGC", "GNDVI"]
+    st.header("🔢 Select Parameter")
+    parameter = st.selectbox(
+        "Select Parameter",
+        ["Level 1", "NDVI", "NDWI", "EVI", "NDMI", "NDSI", "GNDVI", "LSWI", "SAVI", "MSAVI", "DVI", "VIs"]
     )
+    st.session_state.index = parameter  # Store selected parameter
 
 # ---------------- Map Selection ----------------
 st.subheader("1. Select your Area")
@@ -142,38 +146,19 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
         return formatted_date, formatted_time
 
-    def compute_index(image, selected_index):
-        """Compute the selected index."""
+    def get_vis_params(selected_index):
+        """Returns visualization parameters based on selected index."""
         if selected_index == "NDVI":
-            return image.normalizedDifference(['B8', 'B4'])  # Sentinel-2 NIR - Red
+            return {"bands": ["NDVI"], "min": -1, "max": 1}
         elif selected_index == "NDWI":
-            return image.normalizedDifference(['B3', 'B11'])  # Sentinel-2 Green - SWIR
-        elif selected_index == "NDMI":
-            return image.normalizedDifference(['B8', 'B11'])  # Sentinel-2 NIR - SWIR
+            return {"bands": ["NDWI"], "min": -1, "max": 1}
         elif selected_index == "EVI":
-            return image.expression(
-                '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 10000))',
-                {'NIR': image.select('B8'), 'RED': image.select('B4'), 'BLUE': image.select('B2')}
-            )
-        elif selected_index == "SAVI":
-            return image.expression(
-                '(NIR - RED) / (NIR + RED + 0.5) * (1 + 0.5)',
-                {'NIR': image.select('B8'), 'RED': image.select('B4')}
-            )
-        elif selected_index == "AWEI":
-            return image.expression(
-                '((SWIR1 + SWIR2 + BLUE) - (RED + NIR)) / 2',
-                {'SWIR1': image.select('B11'), 'SWIR2': image.select('B8'), 'BLUE': image.select('B2'),
-                 'RED': image.select('B4'), 'NIR': image.select('B8')}
-            )
-        # Add other indices here...
+            return {"bands": ["EVI"], "min": -0.2, "max": 1}
+        elif selected_index == "Level 1":
+            return {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}  # Adjust for Level 1 data
         else:
-            return image  # For Level 1 data, return the original image
+            return {"bands": ["NDVI"], "min": -1, "max": 1}  # Default to NDVI if no valid selection
 
-    # Apply the index computation based on the selected parameter
-    image_with_index = collection.map(lambda img: compute_index(img, index))
-
-    # Display image
     if total_count > 0:
         st.divider()
         col1, col2 = st.columns([1, 1])
@@ -190,25 +175,30 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             frame_idx = st.slider("Slide to 'play' through time", 1, total_count, st.session_state.frame_idx)
 
             # Use the frame index to get the image from the collection
-            img_list = image_with_index.toList(total_count)
+            img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
             
             # Extract the date and time of acquisition
             frame_date, frame_time = get_frame_date(selected_img)
             st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
 
-            vis_params = {"min": 0, "max": 0.3, "bands": ["NDVI"]}  # Update according to the selected parameter
-            map_id = selected_img.getMapId(vis_params)
+            # Get visualization parameters based on the selected index
+            vis_params = get_vis_params(st.session_state.index)
 
-            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
-            folium.TileLayer(
-                tiles=map_id['tile_fetcher'].url_format,
-                attr="Google Earth Engine",
-                overlay=True,
-                control=False
-            ).add_to(frame_map)
-            
-            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+            # Generate the map for the selected image
+            try:
+                map_id = selected_img.getMapId(vis_params)
+                frame_map = folium.Map(location=[sum(lats) / len(lats), sum(lons) / len(lons)], zoom_start=12)
+                folium.TileLayer(
+                    tiles=map_id["tile_fetcher"].url_format,
+                    attr="Google Earth Engine",
+                    overlay=True,
+                    control=False
+                ).add_to(frame_map)
+                
+                st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+            except Exception as e:
+                st.error(f"Error generating map: {e}")
 
         with col2:
             st.subheader("3. Export Timelapse")
@@ -216,7 +206,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = image_with_index.map(lambda img: img.visualize(**vis_params).clip(roi))
+                    video_collection = collection.map(lambda img: img.visualize(**vis_params).clip(roi))
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
