@@ -133,7 +133,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     def add_time_to_image(image):
         """Adds time information to the image."""
         timestamp = ee.Date(image.get("system:time_start"))
-        dt = timestamp.format("YYYY-MM-dd")
+        dt = timestamp.format("YYYY-MM-dd")  # Get formatted date
         feature_collection = ee.FeatureCollection([ 
             ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
                 'time': dt  # Store time as a property
@@ -166,8 +166,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
            
             ts = selected_img.get("system:time_start")
-            dt = ts.format("YYYY-MM-dd").getInfo()  # Get the timestamp in a readable format
-            st.caption(f"Showing Frame {frame_idx} | Date: {dt}")
+            dt = ts.format("YYYY-MM-dd")  # Get the formatted date directly from Earth Engine
+            st.caption(f"Showing Frame {frame_idx} | Date: {dt.getInfo()}")  # Call getInfo() here for display
 
             # Annotate the selected image with its timestamp
             selected_img_with_time = add_time_to_image(selected_img)
