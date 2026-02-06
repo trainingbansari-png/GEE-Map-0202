@@ -133,7 +133,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         """Extracts the acquisition date."""
         timestamp = ee.Date(image.get("system:time_start"))
         formatted_date = timestamp.format("YYYY-MM-dd")  # Date
-        return formatted_date
+        formatted_time = timestamp.format("HH:mm:ss")  # Time
+        return formatted_date, formatted_time
 
     if total_count > 0:
         st.divider()
@@ -154,10 +155,9 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
             
-            # Extract the date of acquisition
-            frame_date = get_frame_date(selected_img).getInfo()
-
-            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date}")
+            # Extract the date and time of acquisition
+            frame_date, frame_time = get_frame_date(selected_img)
+            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
 
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
@@ -181,7 +181,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    # Generate video URL with the date displayed
+                    # Generate video URL with date and time displayed for each frame
                     video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
                     
                     try:
@@ -192,8 +192,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                             'crs': 'EPSG:3857'
                         })
 
-                        # Display the generated video and the corresponding date
-                        st.image(video_url, caption=f"Generated Timelapse | Date: {frame_date}", use_container_width=True)
+                        # Display the generated video with date and time info
+                        st.image(video_url, caption=f"Generated Timelapse | Date: {frame_date} | Time: {frame_time}", use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
                     except Exception as e:
