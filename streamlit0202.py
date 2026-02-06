@@ -130,7 +130,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     total_count = collection.size().getInfo()
 
     def add_time_to_image(image):
-        """Adds both date and time information to the image."""
+        """Adds bold red text (date and time) to the top-center of the image."""
         timestamp = ee.Date(image.get("system:time_start"))
         
         # Get both the formatted date and time directly from Earth Engine
@@ -145,12 +145,11 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             })
         ])
         
-        # Annotate the image with the date and time label
-        # Make sure it's bold red and placed at the top-center of the image
+        # Annotate the image with the date and time label in bold red text
         painted_image = image.paint(
             feature_collection,
-            color='red',
-            width=4
+            color='red',  # Red color for text
+            width=4  # Bold text
         )
         
         # We will overlay text directly onto the image with 'paint'
