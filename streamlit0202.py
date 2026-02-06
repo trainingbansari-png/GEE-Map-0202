@@ -138,6 +138,20 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
         return formatted_date, formatted_time
 
+    def add_time_to_image(image, formatted_date, formatted_time):
+        """Adds time and date information to the image."""
+        feature_collection = ee.FeatureCollection([ 
+            ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
+                'time': formatted_date + ' ' + formatted_time  # Concatenate date and time as a string
+            })
+        ])
+        painted_image = image.paint(
+            feature_collection,
+            color='red',  # Red color for visibility
+            width=2
+        )
+        return painted_image
+
     if total_count > 0:
         st.divider()
         col1, col2 = st.columns([1, 1])
@@ -156,15 +170,17 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Use the frame index to get the image from the collection
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
-            
-            # Extract the date and time of acquisition
+           
+            # Get the acquisition date and time
             frame_date, frame_time = get_frame_date(selected_img)
-            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
+            st.caption(f"Showing Frame {frame_idx} | Date: {frame_date} | Time: {frame_time}")
+
+            selected_img_with_time = add_time_to_image(selected_img, frame_date, frame_time)
 
             vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
                   else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
-
-            map_id = selected_img.clip(roi).getMapId(vis)
+           
+            map_id = selected_img_with_time.clip(roi).getMapId(vis)
 
             frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
             folium.TileLayer(
@@ -174,6 +190,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                 control=False
             ).add_to(frame_map)
             
+            # Properly closed parenthesis for st_folium
             st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
 
         with col2:
@@ -182,7 +199,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
+                    video_collection = collection.map(lambda img: add_time_to_image(img, *get_frame_date(img))
+                                                      .visualize(**vis).clip(roi))
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
@@ -193,7 +211,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                         })
 
                         # Display the generated video with date and time info for each frame
-                        st.image(video_url, caption=f"Generated Timelapse | Date: {frame_date} | Time: {frame_time}", use_container_width=True)
+                        st.image(video_url, caption="Generated Timelapse | Date: {} | Time: {}".format(frame_date, frame_time), use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
                     except Exception as e:
