@@ -133,12 +133,18 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     def add_time_to_image(image):
         """Adds time information to the image."""
         timestamp = ee.Date(image.get("system:time_start"))
-        dt = timestamp.format("YYYY-MM-dd")  # Get formatted date
+        
+        # Using the format method inside the Earth Engine pipeline to format the date
+        formatted_date = timestamp.format("YYYY-MM-dd")
+        
+        # Create a feature collection to display the date as a label
         feature_collection = ee.FeatureCollection([ 
             ee.Feature(ee.Geometry.Point([st.session_state.ul_lon, st.session_state.ul_lat]), {
-                'time': dt  # Store time as a property
+                'time': formatted_date  # Store time as a property
             })
         ])
+        
+        # Annotate the image with the time label
         painted_image = image.paint(
             feature_collection,
             color='black',
