@@ -137,20 +137,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         formatted_time = timestamp_python.strftime('%H:%M:%S')
         return formatted_date, formatted_time
 
-    def add_date_time_overlay(image):
-        """Add the date and time overlay to each image."""
-        date, time = get_frame_date(image)
-        date_time_text = ee.String(date).cat(ee.String(" | ").cat(time))
-        
-        vis = {
-            "bands": ["B4", "B3", "B2"],
-            "min": 0,
-            "max": 3000
-        }
-        
-        image_with_text = image.visualize(**vis).set({'text': date_time_text})
-        return image_with_text
-
     # Creating a dictionary with images and corresponding dates
     image_dict = {}
     img_list = collection.toList(total_count)
@@ -201,7 +187,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(add_date_time_overlay)
+                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
@@ -211,7 +197,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                             'crs': 'EPSG:3857'
                         })
 
-                        # Display the generated timelapse video
                         st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
