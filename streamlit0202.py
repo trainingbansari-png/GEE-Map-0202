@@ -130,28 +130,13 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
     total_count = collection.size().getInfo()
 
     def get_frame_date(image):
-        """Extracts the acquisition date directly using Earth Engine's format function."""
+        """Extracts the acquisition date."""
         timestamp = ee.Date(image.get("system:time_start"))
-        date = timestamp.format("YYYY-MM-dd")
-        time = timestamp.format("HH:mm:ss")
-        return date, time
-
-    def add_date_time_overlay(image):
-        """Add date and time overlay for each image frame."""
-        date, time = get_frame_date(image)
-        # Combine the formatted date and time
-        date_time_text = ee.String(date).cat(ee.String(" | ").cat(time))
-        
-        # Apply visualization and overlay text (with date and time)
-        vis = {
-            "bands": ["B4", "B3", "B2"],
-            "min": 0,
-            "max": 3000
-        }
-
-        # Overlay the text on the image
-        image_with_text = image.visualize(**vis).set({'text': date_time_text})
-        return image_with_text
+        timestamp_seconds = timestamp.millis().divide(1000)  # Convert to seconds
+        timestamp_python = datetime.utcfromtimestamp(timestamp_seconds.getInfo())  # Convert to Python datetime
+        formatted_date = timestamp_python.strftime('%Y-%m-%d')  # Format date
+        formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
+        return formatted_date, formatted_time
 
     if total_count > 0:
         st.divider()
@@ -176,7 +161,8 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             frame_date, frame_time = get_frame_date(selected_img)
             st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
 
-            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+            vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000} if satellite == "Sentinel-2" \
+                  else {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 30000}
 
             map_id = selected_img.clip(roi).getMapId(vis)
 
@@ -196,17 +182,17 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
 
             if st.button("🎬 Generate Animated Video"):
                 with st.spinner("Stitching images..."):
-                    video_collection = collection.map(add_date_time_overlay).clip(roi)
+                    video_collection = collection.map(lambda img: img.visualize(**vis).clip(roi))
                     
                     try:
                         video_url = video_collection.getVideoThumbURL({
-                            'dimensions': 400,  # Adjust dimensions as per requirement
+                            'dimensions': 400,  # Adjust dimensions to your needs
                             'region': roi,
                             'framesPerSecond': fps,
                             'crs': 'EPSG:3857'
                         })
 
-                        # Display the generated timelapse video
+                        # Display the generated timelapse video with frame-specific date and time
                         st.image(video_url, caption="Generated Timelapse", use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
