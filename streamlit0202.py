@@ -192,7 +192,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                             'crs': 'EPSG:3857'
                         })
 
-                        # Display the generated video with date and time info
+                        # Display the generated video with date and time info for each frame
                         st.image(video_url, caption=f"Generated Timelapse | Date: {frame_date} | Time: {frame_time}", use_container_width=True)
                         st.markdown(f"[📥 Download GIF]({video_url})")
 
