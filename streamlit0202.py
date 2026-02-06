@@ -6,8 +6,6 @@ from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
 import numpy as np
-from io import BytesIO
-from PIL import Image
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -90,9 +88,10 @@ with st.sidebar:
         ["Sentinel-2", "Landsat-8", "Landsat-9"]
     )
 
-    st.header("📊 Index Selection")
+    st.header("📊 Select Parameter")
+    # Dropdown list with parameters including Level 1 (raw data)
     index = st.selectbox(
-        "Select Parameter",
+        "Select Index/Parameter",
         ["Level 1", "NDVI", "NDWI", "NDMI", "EVI", "SAVI", "AWEI", "MNDWI", "NBR", "LAI", "FVC", "BGC", "GNDVI"]
     )
 
@@ -180,6 +179,9 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
         elif selected_index == "Level 1":
             return image
 
+    # Visualization parameters for different indices
+    vis_params = {"min": -1, "max": 1, "palette": ["blue", "white", "green"]}
+
     if total_count > 0:
         st.divider()
         col1, col2 = st.columns([1, 1])
@@ -202,11 +204,9 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
             # Compute the selected index
             result = compute_index(selected_img, index)
 
-            # Check if result is a valid ee.Image
+            # Process and display the result
             if isinstance(result, ee.Image):
-                vis_params = {"min": -1, "max": 1, "palette": ["blue", "white", "green"]}  # Adjust for each index
                 map_id = result.getMapId(vis_params)
-
                 frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
                 folium.TileLayer(
                     tiles=map_id["tile_fetcher"].url_format,
@@ -214,10 +214,7 @@ if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_l
                     overlay=True,
                     control=False
                 ).add_to(frame_map)
-                
                 st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
-            else:
-                st.error("Error: The computed result is not a valid image.")
 
         with col2:
             st.subheader("3. Export Timelapse")
