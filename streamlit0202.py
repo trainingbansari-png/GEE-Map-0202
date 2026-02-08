@@ -20,9 +20,7 @@ if st.session_state.index is None:
 
 # ---------------- EE Init ----------------
 def initialize_ee():
-    """Robust initialization to avoid AttributeErrors."""
     try:
-        # Check if already initialized
         ee.data.getSummary()
     except Exception:
         try:
@@ -39,7 +37,7 @@ def initialize_ee():
 
 initialize_ee()
 
-# ---------------- Cloud Masking Functions ----------------
+# ---------------- Cloud Masking ----------------
 def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
         qa = image.select('QA60')
@@ -53,35 +51,22 @@ def mask_clouds(image, satellite):
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
-    st.header("🧭 Area of Interest")
-    st.info("Draw a rectangle on the map.")
+    st.header("⚙️ Settings")
+    view_mode = st.radio("Display Mode", ["Auto-Timelapse", "Manual Scrubber"])
     
-    # Use existing state if available, otherwise default to 0.0
-    ul_lat = st.number_input("Upper Left Latitude", value=st.session_state.ul_lat or 0.0, format="%.6f")
-    ul_lon = st.number_input("Upper Left Longitude", value=st.session_state.ul_lon or 0.0, format="%.6f")
-    lr_lat = st.number_input("Lower Right Latitude", value=st.session_state.lr_lat or 0.0, format="%.6f")
-    lr_lon = st.number_input("Lower Right Longitude", value=st.session_state.lr_lon or 0.0, format="%.6f")
-    
-    st.session_state.ul_lat, st.session_state.ul_lon = ul_lat, ul_lon
-    st.session_state.lr_lat, st.session_state.lr_lon = lr_lat, lr_lon
-
-    st.header("📅 Date Filter")
-    start_date = st.date_input("Start Date", date(2023, 1, 1))
-    end_date = st.date_input("End Date", date(2023, 12, 31))
-
-    st.header("🛰️ Satellite")
+    st.divider()
     satellite = st.selectbox("Select Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
-
-    st.header("🔢 Select Parameter")
     parameter = st.selectbox("Select Parameter", ["Level 1", "NDVI", "NDWI", "EVI"])
     st.session_state.index = parameter
+
+    start_date = st.date_input("Start Date", date(2023, 1, 1))
+    end_date = st.date_input("End Date", date(2023, 12, 31))
 
 # ---------------- Map Selection ----------------
 st.subheader("1. Select your Area")
 m = folium.Map(location=[22.0, 69.0], zoom_start=6)
 Draw(draw_options={"polyline": False, "polygon": False, "circle": False, "marker": False, "rectangle": True}).add_to(m)
-
-map_data = st_folium(m, height=400, width="100%", key="roi_map")
+map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
 if map_data and map_data.get("all_drawings"):
     coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
@@ -94,7 +79,6 @@ if st.session_state.ul_lat and st.session_state.ul_lon:
     roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat, 
                                  st.session_state.lr_lon, st.session_state.lr_lat])
 
-    # Configuration for different satellites
     config = {
         "Sentinel-2": {"id": "COPERNICUS/S2_SR_HARMONIZED", "red": "B4", "green": "B3", "blue": "B2", "nir": "B8", "max": 3000},
         "Landsat-8": {"id": "LANDSAT/LC08/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "max": 20000},
@@ -106,10 +90,9 @@ if st.session_state.ul_lat and st.session_state.ul_lon:
                   .filterDate(str(start_date), str(end_date))
                   .map(lambda img: mask_clouds(img, satellite))
                   .sort("system:time_start")
-                  .limit(30))
+                  .limit(50))
 
-    def compute_vis(image):
-        """Prepares images for visualization based on selected index."""
+    def apply_vis(image):
         if st.session_state.index == "NDVI":
             idx = image.normalizedDifference([config['nir'], config['red']])
             return idx.visualize(min=-0.1, max=0.8, palette=['brown', 'yellow', 'green'])
@@ -117,37 +100,38 @@ if st.session_state.ul_lat and st.session_state.ul_lon:
             idx = image.normalizedDifference([config['green'], config['nir']])
             return idx.visualize(min=-0.1, max=0.5, palette=['white', 'blue'])
         elif st.session_state.index == "EVI":
-            evi = image.expression(
-                "2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))",
-                {'NIR': image.select(config['nir']), 'RED': image.select(config['red']), 'BLUE': image.select(config['blue'])}
-            )
+            evi = image.expression("2.5 * ((N-R)/(N+6*R-7.5*B+1))", 
+                                   {'N':image.select(config['nir']), 'R':image.select(config['red']), 'B':image.select(config['blue'])})
             return evi.visualize(min=-0.1, max=0.8, palette=['white', 'green'])
-        else: # Level 1 (RGB)
+        else:
             return image.visualize(bands=[config['red'], config['green'], config['blue']], min=0, max=config['max'])
 
-    total_count = collection.size().getInfo()
+    total_count = int(collection.size().getInfo())
 
     if total_count > 0:
         st.divider()
-        st.subheader("2. Generated Timelapse")
+        st.subheader(f"2. {view_mode}")
+
+        if view_mode == "Auto-Timelapse":
+            video_col = collection.map(apply_vis)
+            video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': 5, 'format': 'gif'})
+            st.image(video_url, use_container_width=True)
         
-        # Prepare the frames
-        video_col = collection.map(compute_vis)
-        
-        try:
-            # We use 'gif' because 'mp4' often throws an EEException in the Python API's thumbURL method
-            video_url = video_col.getVideoThumbURL({
-                'dimensions': 720,
-                'region': roi,
-                'framesPerSecond': 5,
-                'format': 'gif'
-            })
+        else:
+            # Manual Scrubber Logic
+            frame_idx = st.slider("Scrub through images", 1, total_count, 1)
+            # Get the specific image based on slider index
+            img_list = collection.toList(total_count)
+            selected_img = ee.Image(img_list.get(frame_idx - 1))
             
-            st.image(video_url, caption=f"{satellite} - {st.session_state.index}", use_container_width=True)
-            st.markdown(f"**[🔗 Download GIF]({video_url})**")
-            st.info(f"Generated from {total_count} images.")
+            # Get Date for display
+            date_info = selected_img.date().format('YYYY-MM-DD HH:mm').getInfo()
+            st.write(f"**Frame {frame_idx} of {total_count}** | Acquisition Date: `{date_info}`")
             
-        except Exception as e:
-            st.error(f"Error generating timelapse: {e}")
+            # Generate static URL for the selected frame
+            vis_img = apply_vis(selected_img)
+            thumb_url = vis_img.getThumbURL({'dimensions': 1024, 'region': roi, 'format': 'png'})
+            st.image(thumb_url, use_container_width=True)
+
     else:
-        st.warning("No images found for this area/date range. Try a larger box or wider dates.")
+        st.warning("No images found. Adjust your ROI or date range.")
