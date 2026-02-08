@@ -11,22 +11,18 @@ st.set_page_config(layout="wide", page_title="GEE Satellite Data Viewer")
 st.title("🌍 GEE Satellite Data Viewer")
 
 # ---------------- Session State ----------------
-# Initialize all keys to avoid AttributeErrors
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing", "index"]:
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "index"]:
     if k not in st.session_state:
         st.session_state[k] = None
 
-if st.session_state.frame_idx is None:
-    st.session_state.frame_idx = 1
-if st.session_state.is_playing is None:
-    st.session_state.is_playing = False
 if st.session_state.index is None:
     st.session_state.index = "Level 1"
 
 # ---------------- EE Init ----------------
 def initialize_ee():
-    # Robust check for existing initialization
+    """Robust initialization to avoid AttributeErrors."""
     try:
+        # Check if already initialized
         ee.data.getSummary()
     except Exception:
         try:
@@ -36,7 +32,7 @@ def initialize_ee():
                 scopes=["https://www.googleapis.com/auth/earthengine"],
             )
             ee.Initialize(credentials)
-            st.success("Earth Engine initialized successfully.")
+            st.sidebar.success("Earth Engine Initialized")
         except Exception as e:
             st.error(f"Error initializing Earth Engine: {e}")
             st.stop()
@@ -58,13 +54,13 @@ def mask_clouds(image, satellite):
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("🧭 Area of Interest")
-    st.info("Draw a rectangle on the map to define your ROI.")
+    st.info("Draw a rectangle on the map.")
     
-    # Coordinates Display/Edit
-    ul_lat = st.number_input("Upper Left Latitude", value=st.session_state.ul_lat if st.session_state.ul_lat else 0.0, format="%.6f")
-    ul_lon = st.number_input("Upper Left Longitude", value=st.session_state.ul_lon if st.session_state.ul_lon else 0.0, format="%.6f")
-    lr_lat = st.number_input("Lower Right Latitude", value=st.session_state.lr_lat if st.session_state.lr_lat else 0.0, format="%.6f")
-    lr_lon = st.number_input("Lower Right Longitude", value=st.session_state.lr_lon if st.session_state.lr_lon else 0.0, format="%.6f")
+    # Use existing state if available, otherwise default to 0.0
+    ul_lat = st.number_input("Upper Left Latitude", value=st.session_state.ul_lat or 0.0, format="%.6f")
+    ul_lon = st.number_input("Upper Left Longitude", value=st.session_state.ul_lon or 0.0, format="%.6f")
+    lr_lat = st.number_input("Lower Right Latitude", value=st.session_state.lr_lat or 0.0, format="%.6f")
+    lr_lon = st.number_input("Lower Right Longitude", value=st.session_state.lr_lon or 0.0, format="%.6f")
     
     st.session_state.ul_lat, st.session_state.ul_lon = ul_lat, ul_lon
     st.session_state.lr_lat, st.session_state.lr_lon = lr_lat, lr_lon
@@ -84,6 +80,7 @@ with st.sidebar:
 st.subheader("1. Select your Area")
 m = folium.Map(location=[22.0, 69.0], zoom_start=6)
 Draw(draw_options={"polyline": False, "polygon": False, "circle": False, "marker": False, "rectangle": True}).add_to(m)
+
 map_data = st_folium(m, height=400, width="100%", key="roi_map")
 
 if map_data and map_data.get("all_drawings"):
@@ -97,16 +94,14 @@ if st.session_state.ul_lat and st.session_state.ul_lon:
     roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat, 
                                  st.session_state.lr_lon, st.session_state.lr_lat])
 
-    col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
-    
-    # Define Band Mapping based on sensor
-    bands = {
-        "Sentinel-2": {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B8'},
-        "Landsat-8": {'red': 'SR_B4', 'green': 'SR_B3', 'blue': 'SR_B2', 'nir': 'SR_B5'},
-        "Landsat-9": {'red': 'SR_B4', 'green': 'SR_B3', 'blue': 'SR_B2', 'nir': 'SR_B5'}
+    # Configuration for different satellites
+    config = {
+        "Sentinel-2": {"id": "COPERNICUS/S2_SR_HARMONIZED", "red": "B4", "green": "B3", "blue": "B2", "nir": "B8", "max": 3000},
+        "Landsat-8": {"id": "LANDSAT/LC08/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "max": 20000},
+        "Landsat-9": {"id": "LANDSAT/LC09/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "max": 20000}
     }[satellite]
 
-    collection = (ee.ImageCollection(col_id)
+    collection = (ee.ImageCollection(config["id"])
                   .filterBounds(roi)
                   .filterDate(str(start_date), str(end_date))
                   .map(lambda img: mask_clouds(img, satellite))
@@ -114,17 +109,21 @@ if st.session_state.ul_lat and st.session_state.ul_lon:
                   .limit(30))
 
     def compute_vis(image):
+        """Prepares images for visualization based on selected index."""
         if st.session_state.index == "NDVI":
-            idx = image.normalizedDifference([bands['nir'], bands['red']])
+            idx = image.normalizedDifference([config['nir'], config['red']])
             return idx.visualize(min=-0.1, max=0.8, palette=['brown', 'yellow', 'green'])
         elif st.session_state.index == "NDWI":
-            idx = image.normalizedDifference([bands['green'], bands['nir']])
+            idx = image.normalizedDifference([config['green'], config['nir']])
             return idx.visualize(min=-0.1, max=0.5, palette=['white', 'blue'])
-        elif st.session_state.index == "Level 1":
-            # Scale for SR data (S2 is 0-10000, Landsat is scaled differently)
-            v_max = 3000 if satellite == "Sentinel-2" else 15000
-            return image.visualize(bands=[bands['red'], bands['green'], bands['blue']], min=0, max=v_max)
-        return image.visualize(bands=[bands['red'], bands['green'], bands['blue']], min=0, max=3000)
+        elif st.session_state.index == "EVI":
+            evi = image.expression(
+                "2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))",
+                {'NIR': image.select(config['nir']), 'RED': image.select(config['red']), 'BLUE': image.select(config['blue'])}
+            )
+            return evi.visualize(min=-0.1, max=0.8, palette=['white', 'green'])
+        else: # Level 1 (RGB)
+            return image.visualize(bands=[config['red'], config['green'], config['blue']], min=0, max=config['max'])
 
     total_count = collection.size().getInfo()
 
@@ -132,18 +131,23 @@ if st.session_state.ul_lat and st.session_state.ul_lon:
         st.divider()
         st.subheader("2. Generated Timelapse")
         
-        # Create a collection of RGB visualized frames
+        # Prepare the frames
         video_col = collection.map(compute_vis)
         
-        # Request video URL from GEE
-        video_url = video_col.getVideoThumbURL({
-            'dimensions': 720,
-            'region': roi,
-            'framesPerSecond': 5,
-            'format': 'mp4'
-        })
-        
-        st.video(video_url)
-        st.write(f"Showing {total_count} frames from {satellite}")
+        try:
+            # We use 'gif' because 'mp4' often throws an EEException in the Python API's thumbURL method
+            video_url = video_col.getVideoThumbURL({
+                'dimensions': 720,
+                'region': roi,
+                'framesPerSecond': 5,
+                'format': 'gif'
+            })
+            
+            st.image(video_url, caption=f"{satellite} - {st.session_state.index}", use_container_width=True)
+            st.markdown(f"**[🔗 Download GIF]({video_url})**")
+            st.info(f"Generated from {total_count} images.")
+            
+        except Exception as e:
+            st.error(f"Error generating timelapse: {e}")
     else:
-        st.warning("No images found for this area/date range.")
+        st.warning("No images found for this area/date range. Try a larger box or wider dates.")
