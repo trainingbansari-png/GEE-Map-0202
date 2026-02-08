@@ -10,14 +10,6 @@ from datetime import date, datetime
 st.set_page_config(layout="wide", page_title="GEE Satellite Data Viewer")
 st.title("🌍 GEE Satellite Data Viewer")
 
-# ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "index"]:
-    if k not in st.session_state:
-        st.session_state[k] = None
-
-if st.session_state.index is None:
-    st.session_state.index = "Level 1"
-
 # ---------------- EE Init ----------------
 def initialize_ee():
     try:
@@ -37,6 +29,11 @@ def initialize_ee():
 
 initialize_ee()
 
+# ---------------- Session State ----------------
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon"]:
+    if k not in st.session_state:
+        st.session_state[k] = None
+
 # ---------------- Cloud Masking ----------------
 def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
@@ -51,13 +48,12 @@ def mask_clouds(image, satellite):
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("⚙️ Control Panel")
     view_mode = st.radio("Display Mode", ["Auto-Timelapse", "Manual Scrubber"])
     
     st.divider()
     satellite = st.selectbox("Select Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
-    parameter = st.selectbox("Select Parameter", ["Level 1", "NDVI", "NDWI", "EVI"])
-    st.session_state.index = parameter
+    parameter = st.selectbox("Select Parameter", ["Level 1", "NDVI", "NDWI", "EVI", "NDSI", "SAVI"])
 
     start_date = st.date_input("Start Date", date(2023, 1, 1))
     end_date = st.date_input("End Date", date(2023, 12, 31))
@@ -79,10 +75,11 @@ if st.session_state.ul_lat and st.session_state.ul_lon:
     roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat, 
                                  st.session_state.lr_lon, st.session_state.lr_lat])
 
+    # Sensor Band Config
     config = {
-        "Sentinel-2": {"id": "COPERNICUS/S2_SR_HARMONIZED", "red": "B4", "green": "B3", "blue": "B2", "nir": "B8", "max": 3000},
-        "Landsat-8": {"id": "LANDSAT/LC08/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "max": 20000},
-        "Landsat-9": {"id": "LANDSAT/LC09/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "max": 20000}
+        "Sentinel-2": {"id": "COPERNICUS/S2_SR_HARMONIZED", "red": "B4", "green": "B3", "blue": "B2", "nir": "B8", "swir": "B11", "max": 3000},
+        "Landsat-8": {"id": "LANDSAT/LC08/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "swir": "SR_B6", "max": 20000},
+        "Landsat-9": {"id": "LANDSAT/LC09/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "swir": "SR_B6", "max": 20000}
     }[satellite]
 
     collection = (ee.ImageCollection(config["id"])
@@ -93,45 +90,46 @@ if st.session_state.ul_lat and st.session_state.ul_lon:
                   .limit(50))
 
     def apply_vis(image):
-        if st.session_state.index == "NDVI":
-            idx = image.normalizedDifference([config['nir'], config['red']])
-            return idx.visualize(min=-0.1, max=0.8, palette=['brown', 'yellow', 'green'])
-        elif st.session_state.index == "NDWI":
-            idx = image.normalizedDifference([config['green'], config['nir']])
-            return idx.visualize(min=-0.1, max=0.5, palette=['white', 'blue'])
-        elif st.session_state.index == "EVI":
-            evi = image.expression("2.5 * ((N-R)/(N+6*R-7.5*B+1))", 
-                                   {'N':image.select(config['nir']), 'R':image.select(config['red']), 'B':image.select(config['blue'])})
-            return evi.visualize(min=-0.1, max=0.8, palette=['white', 'green'])
-        else:
+        if parameter == "NDVI":
+            return image.normalizedDifference([config['nir'], config['red']]).visualize(min=-0.1, max=0.8, palette=['brown', 'yellow', 'green'])
+        elif parameter == "NDWI":
+            return image.normalizedDifference([config['green'], config['nir']]).visualize(min=-0.1, max=0.5, palette=['white', 'blue'])
+        elif parameter == "NDSI":
+            return image.normalizedDifference([config['green'], config['swir']]).visualize(min=0.0, max=0.8, palette=['black', 'blue', 'white'])
+        elif parameter == "SAVI":
+            savi = image.expression("((N - R) / (N + R + 0.5)) * (1.5)", {'N': image.select(config['nir']), 'R': image.select(config['red'])})
+            return savi.visualize(min=-0.1, max=0.8, palette=['brown', 'yellow', 'green'])
+        elif parameter == "Level 1":
             return image.visualize(bands=[config['red'], config['green'], config['blue']], min=0, max=config['max'])
+        return image.visualize(bands=[config['red'], config['green'], config['blue']], min=0, max=config['max'])
 
     total_count = int(collection.size().getInfo())
 
     if total_count > 0:
         st.divider()
-        st.subheader(f"2. {view_mode}")
-
+        
         if view_mode == "Auto-Timelapse":
+            st.subheader("2. Auto-Timelapse (GIF)")
             video_col = collection.map(apply_vis)
             video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': 5, 'format': 'gif'})
             st.image(video_url, use_container_width=True)
         
         else:
-            # Manual Scrubber Logic
-            frame_idx = st.slider("Scrub through images", 1, total_count, 1)
-            # Get the specific image based on slider index
+            st.subheader("2. Manual Frame Scrubber")
+            frame_idx = st.slider("Move slider to change date", 1, total_count, 1)
+            
+            # Fetch specific image and its date
             img_list = collection.toList(total_count)
             selected_img = ee.Image(img_list.get(frame_idx - 1))
             
-            # Get Date for display
-            date_info = selected_img.date().format('YYYY-MM-DD HH:mm').getInfo()
-            st.write(f"**Frame {frame_idx} of {total_count}** | Acquisition Date: `{date_info}`")
+            # --- This part changes the date dynamically ---
+            acq_date = selected_img.date().format('MMMM dd, YYYY | HH:mm').getInfo()
+            st.info(f"📅 **Acquisition Date:** {acq_date}")
             
-            # Generate static URL for the selected frame
+            # Display Image
             vis_img = apply_vis(selected_img)
             thumb_url = vis_img.getThumbURL({'dimensions': 1024, 'region': roi, 'format': 'png'})
-            st.image(thumb_url, use_container_width=True)
+            st.image(thumb_url, use_container_width=True, caption=f"Frame {frame_idx} - {parameter}")
 
     else:
-        st.warning("No images found. Adjust your ROI or date range.")
+        st.warning("No imagery found for this selection.")
