@@ -89,16 +89,18 @@ with st.sidebar:
     parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI", "SAVI"])
     
     st.header("🎨 Palette")
+    # Added "No Color (Grayscale)" to the list
     palette_choice = st.selectbox(
         "Color Theme",
-        ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "Terrain (Brown)"]
+        ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "Terrain (Brown)", "No Color (Grayscale)"]
     )
 
     palettes = {
         "Vegetation (Green)": ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301'],
         "Water (Blue)": ['#ffffd9', '#7fcdbb', '#41b6c4', '#1d91c0', '#0c2c84'],
         "Thermal (Red)": ['#ffffff', '#fc9272', '#ef3b2c', '#a50f15', '#67000d'],
-        "Terrain (Brown)": ['#332808', '#946920', '#30eb5b', '#134e1c']
+        "Terrain (Brown)": ['#332808', '#946920', '#30eb5b', '#134e1c'],
+        "No Color (Grayscale)": None # Setting to None to handle black and white
     }
     selected_palette = palettes[palette_choice]
 
@@ -140,13 +142,16 @@ if st.session_state.ul_lat:
         st.divider()
         c1, c2 = st.columns([1, 1])
         
-        # Define Vis Parameters
+        # Setup Vis Parameters
         if parameter == "Level1":
             bm = get_band_map(satellite)
             max_val = 3000 if "Sentinel" in satellite else 15000 
             vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": max_val}
         else:
-            vis = {"min": -1, "max": 1, "palette": selected_palette}
+            # Handle No Color Option
+            vis = {"min": -1, "max": 1}
+            if selected_palette:
+                vis["palette"] = selected_palette
 
         with c1:
             st.subheader("2. Visual Review")
@@ -156,7 +161,6 @@ if st.session_state.ul_lat:
             img = ee.Image(collection.toList(count).get(idx-1))
             processed_img = apply_parameter(img, parameter, satellite)
             
-            # Timestamp for UI
             timestamp = ee.Date(img.get("system:time_start"))
             date_time_str = timestamp.format("YYYY-MM-DD HH:mm:ss").getInfo()
             st.metric(label="Acquisition Timestamp (UTC)", value=date_time_str)
@@ -177,19 +181,10 @@ if st.session_state.ul_lat:
             fps = st.slider("Frames Per Second", 1, 15, 5)
             
             if st.button("🎬 Generate Animated Timelapse"):
-                with st.spinner("Stitching video with timestamps..."):
+                with st.spinner("Processing video..."):
                     try:
-                        # Preparation for Video
-                        def prep_video_frame(img):
-                            # Apply parameter and visualization
-                            visualized = apply_parameter(img, parameter, satellite).visualize(**vis).clip(roi)
-                            
-                            # Create a simple label using Earth Engine geometry paint (simplified approach)
-                            # Note: Real 'text burn' is heavy in GEE. We will show the date as metadata 
-                            # inside the video title or caption in Streamlit for best performance.
-                            return visualized.set('label', ee.Date(img.get('system:time_start')).format('YYYY-MM-DD'))
-
-                        video_col = collection.map(prep_video_frame)
+                        # Map visualization across the collection
+                        video_col = collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
                         
                         video_url = video_col.getVideoThumbURL({
                             'dimensions': 720, 
@@ -199,7 +194,6 @@ if st.session_state.ul_lat:
                         })
                         
                         st.image(video_url, caption=f"{parameter} Timelapse ({satellite})")
-                        st.info("The timelapse covers the selected timeframe. Dates are displayed in the caption above.")
                         st.markdown(f"### [📥 Download Result]({video_url})")
                     except Exception as e:
                         st.error(f"Video Generation Error: {e}")
