@@ -119,15 +119,16 @@ if total_count > 0:
     img_list = collection.toList(total_count)
     selected_img = ee.Image(img_list.get(frame_idx - 1))
     
+    # PRECISION TIMESTAMP LOGIC
     timestamp = selected_img.get('system:time_start').getInfo()
     dt_object = datetime.fromtimestamp(float(timestamp) / 1000.0, tz=timezone.utc)
-    acq_date = dt_object.strftime('%B %d, %Y')
+    acq_datetime = dt_object.strftime('%B %d, %Y | %H:%M:%S UTC')
 
-    st.info(f"📅 **Selected Date:** {acq_date}")
+    st.info(f"📅 **Selected Date & Time:** {acq_datetime}")
     
     vis_img = apply_vis(selected_img, parameter, cfg)
     thumb_url = vis_img.getThumbURL({'dimensions': 1024, 'region': roi, 'format': 'png'})
-    st.image(thumb_url, use_container_width=True)
+    st.image(thumb_url, use_container_width=True, caption=f"Precise Overpass: {acq_datetime}")
 
     # ---------------- Video Generation ----------------
     st.divider()
@@ -151,7 +152,7 @@ if total_count > 0:
             })
             
             with c2:
-                st.image(video_url, caption="Generated Time-Lapse")
+                st.image(video_url, caption=f"Time-Lapse ({parameter})")
                 st.markdown(f"🔗 [Download Animation]({video_url})")
 
 else:
