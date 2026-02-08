@@ -22,7 +22,7 @@ if st.session_state.frame_idx is None:
 def initialize_ee():
     """Initializes Earth Engine using service account secrets."""
     try:
-        # Check if already initialized
+        # Check if already initialized publically
         ee.GetLibraryVersion()
     except Exception:
         try:
@@ -35,7 +35,7 @@ def initialize_ee():
                 ee.Initialize(credentials)
                 st.sidebar.success("Earth Engine Initialized")
             else:
-                st.error("Secrets not found. Check your Streamlit Cloud secrets configuration.")
+                st.error("Secrets not found. Check your Streamlit Cloud configuration.")
         except Exception as e:
             st.sidebar.error(f"EE Init Error: {e}")
 
@@ -45,10 +45,8 @@ initialize_ee()
 def get_band_map(satellite):
     """Maps common names to satellite-specific band IDs."""
     if "Sentinel" in satellite:
-        # Sentinel-2 Bands
         return {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B8', 'swir1': 'B11'}
     else: 
-        # Landsat 8 & 9 Bands
         return {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B5', 'swir1': 'B6'}
 
 def mask_clouds(image, satellite):
@@ -58,20 +56,15 @@ def mask_clouds(image, satellite):
         mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
     else: 
         qa = image.select('QA_PIXEL')
-        # Masking clouds (bit 3) and cloud shadows (bit 4)
         mask = qa.bitwiseAnd(1 << 3).eq(0).And(qa.bitwiseAnd(1 << 4).eq(0))
     return image.updateMask(mask)
 
 def apply_parameter(image, parameter, satellite):
-    """Calculates remote sensing indices based on user selection."""
+    """Calculates remote sensing indices."""
     bm = get_band_map(satellite)
     if parameter == "Level1":
         return image
     
-    # 
-
-[Image of the electromagnetic spectrum in remote sensing]
-
     if parameter == "NDVI":
         idx = image.normalizedDifference([bm['nir'], bm['red']])
     elif parameter == "NDWI":
@@ -152,7 +145,6 @@ if st.session_state.ul_lat:
         st.divider()
         c1, c2 = st.columns([1, 1])
         
-        # Define Vis Parameters
         if parameter == "Level1":
             bm = get_band_map(satellite)
             max_val = 3000 if "Sentinel" in satellite else 15000 
@@ -188,7 +180,6 @@ if st.session_state.ul_lat:
             if st.button("🎬 Generate Animated Timelapse"):
                 with st.spinner("Processing video..."):
                     try:
-                        # Prepare the collection for video export
                         video_col = collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
                         video_url = video_col.getVideoThumbURL({
                             'dimensions': 720, 
@@ -197,11 +188,10 @@ if st.session_state.ul_lat:
                             'crs': 'EPSG:3857'
                         })
                         st.image(video_url, caption="Preview Result")
-                        st.success("Timelapse generated successfully!")
                         st.markdown(f"### [📥 Download Result]({video_url})")
                     except Exception as e:
                         st.error(f"Video Generation Error: {e}")
     else:
-        st.warning("No images found. Try a different date range or a larger area.")
+        st.warning("No images found. Try a wider date range.")
 else:
     st.info("💡 Draw a rectangle on the map to select your region.")
