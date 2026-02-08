@@ -141,6 +141,7 @@ if st.session_state.ul_lat:
         st.divider()
         c1, c2 = st.columns([1, 1])
         
+        # Consistent Visualization Logic
         if parameter == "Level1":
             bm = get_band_map(satellite)
             max_val = 3000 if "Sentinel" in satellite else 15000 
@@ -159,7 +160,7 @@ if st.session_state.ul_lat:
             img = ee.Image(img_list.get(idx-1))
             processed_img = apply_parameter(img, parameter, satellite)
             
-            # Acquisition Time Display
+            # Timestamp Display
             timestamp = ee.Date(img.get("system:time_start"))
             date_time_str = timestamp.format("YYYY-MM-DD HH:mm:ss").getInfo()
             st.metric(label="Acquisition Time (UTC)", value=date_time_str)
@@ -171,7 +172,10 @@ if st.session_state.ul_lat:
                 
                 f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
                 folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-                st_folium(f_map, height=400, width="100%", key=f"review_map_{idx}")
+                
+                # --- DYNAMIC KEY FIX ---
+                # We use a combined key of index, parameter, and palette to force a redraw
+                st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
             except Exception as e:
                 st.error(f"Review Map Rendering Error: {e}")
 
