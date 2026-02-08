@@ -80,4 +80,120 @@ def apply_parameter(image, parameter, satellite):
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
-    st.
+    st.header("📅 Configuration")
+    start_date = st.date_input("Start Date", date(2024, 1, 1))
+    end_date = st.date_input("End Date", date(2024, 12, 31))
+    satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
+    
+    st.header("📊 Analysis")
+    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI", "SAVI"])
+    
+    st.header("🎨 Palette")
+    palette_choice = st.selectbox(
+        "Color Theme",
+        ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "Terrain (Brown)", "No Color (Grayscale)"]
+    )
+
+    palettes = {
+        "Vegetation (Green)": ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301'],
+        "Water (Blue)": ['#ffffd9', '#7fcdbb', '#41b6c4', '#1d91c0', '#0c2c84'],
+        "Thermal (Red)": ['#ffffff', '#fc9272', '#ef3b2c', '#a50f15', '#67000d'],
+        "Terrain (Brown)": ['#332808', '#946920', '#30eb5b', '#134e1c'],
+        "No Color (Grayscale)": None 
+    }
+    selected_palette = palettes[palette_choice]
+
+# ---------------- Map Selection ----------------
+st.subheader("1. Select Area of Interest")
+m = folium.Map(location=[22.0, 69.0], zoom_start=6)
+Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True}).add_to(m)
+map_data = st_folium(m, height=350, width="100%", key="roi_map")
+
+if map_data and map_data["all_drawings"]:
+    coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
+    lons, lats = zip(*coords)
+    st.session_state.ul_lat, st.session_state.ul_lon = min(lats), min(lons)
+    st.session_state.lr_lat, st.session_state.lr_lon = max(lats), max(lons)
+
+# ---------------- Main Processing ----------------
+if st.session_state.ul_lat:
+    roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat, 
+                                 st.session_state.lr_lon, st.session_state.lr_lat])
+    
+    col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", 
+              "Landsat-8": "LANDSAT/LC08/C02/T1_L2", 
+              "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
+
+    collection = (ee.ImageCollection(col_id)
+                  .filterBounds(roi)
+                  .filterDate(str(start_date), str(end_date))
+                  .map(lambda img: mask_clouds(img, satellite))
+                  .sort("system:time_start")
+                  .limit(30))
+
+    try:
+        count = collection.size().getInfo()
+    except Exception as e:
+        st.error(f"Error fetching collection: {e}")
+        count = 0
+
+    if count > 0:
+        st.divider()
+        c1, c2 = st.columns([1, 1])
+        
+        if parameter == "Level1":
+            bm = get_band_map(satellite)
+            max_val = 3000 if "Sentinel" in satellite else 15000 
+            vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": max_val}
+        else:
+            vis = {"min": -1, "max": 1}
+            if selected_palette:
+                vis["palette"] = selected_palette
+
+        with c1:
+            st.subheader("2. Visual Review")
+            idx = st.slider("Select Frame", 1, count, st.session_state.frame_idx)
+            st.session_state.frame_idx = idx
+            
+            img_list = collection.toList(count)
+            img = ee.Image(img_list.get(idx-1))
+            processed_img = apply_parameter(img, parameter, satellite)
+            
+            # Acquisition Time Display
+            timestamp = ee.Date(img.get("system:time_start"))
+            date_time_str = timestamp.format("YYYY-MM-DD HH:mm:ss").getInfo()
+            st.metric(label="Acquisition Time (UTC)", value=date_time_str)
+            
+            try:
+                map_id = processed_img.clip(roi).getMapId(vis)
+                center_lat = (st.session_state.ul_lat + st.session_state.lr_lat) / 2
+                center_lon = (st.session_state.ul_lon + st.session_state.lr_lon) / 2
+                
+                f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
+                folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
+                st_folium(f_map, height=400, width="100%", key=f"review_map_{idx}")
+            except Exception as e:
+                st.error(f"Review Map Rendering Error: {e}")
+
+        with c2:
+            st.subheader("3. Export")
+            fps = st.slider("Frames Per Second", 1, 15, 5)
+            
+            if st.button("🎬 Generate Animated Timelapse"):
+                with st.spinner("Generating video..."):
+                    try:
+                        video_col = collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
+                        video_url = video_col.getVideoThumbURL({
+                            'dimensions': 720, 
+                            'region': roi, 
+                            'framesPerSecond': fps, 
+                            'crs': 'EPSG:3857'
+                        })
+                        st.image(video_url, caption=f"{parameter} Timelapse ({satellite})")
+                        st.markdown(f"### [📥 Download Result]({video_url})")
+                    except Exception as e:
+                        st.error(f"Video Generation Error: {e}")
+    else:
+        st.warning("No images found. Adjust your date range or ROI.")
+else:
+    st.info("💡 Draw a rectangle on the map to define your study area.")
