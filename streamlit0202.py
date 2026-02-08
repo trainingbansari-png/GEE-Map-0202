@@ -11,7 +11,6 @@ st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
-# Initialize session state for coordinates if not present
 if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
 if "ul_lon" not in st.session_state: st.session_state.ul_lon = 69.5
 if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
@@ -68,19 +67,17 @@ def apply_parameter(image, parameter, satellite):
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("📍 Coordinate Editor")
-    # Manual Input Fields
     u_lat = st.number_input("Upper Lat", value=float(st.session_state.ul_lat), format="%.4f")
     u_lon = st.number_input("Left Lon", value=float(st.session_state.ul_lon), format="%.4f")
     l_lat = st.number_input("Lower Lat", value=float(st.session_state.lr_lat), format="%.4f")
     l_lon = st.number_input("Right Lon", value=float(st.session_state.lr_lon), format="%.4f")
     
-    # Update session state from manual input
     st.session_state.ul_lat, st.session_state.ul_lon = u_lat, u_lon
     st.session_state.lr_lat, st.session_state.lr_lon = l_lat, l_lon
 
     st.header("📅 Configuration")
-    start_date = st.date_input("Start Date", date(2025, 1, 1))
-    end_date = st.date_input("End Date", date(2025, 12, 31))
+    start_date = st.date_input("Start Date", date(2024, 1, 1))
+    end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
     parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
     
@@ -94,22 +91,17 @@ with st.sidebar:
     selected_palette = palettes[palette_choice]
 
 # ---------------- Map Selection ----------------
-st.subheader("1. Area Selection (Draw or Edit Sidebar)")
-# Calculate center for initial map view
+st.subheader("1. Area Selection")
 center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
 m = folium.Map(location=center, zoom_start=8)
 Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True}).add_to(m)
-
-# Trigger map display
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
-# Update coordinates if user draws on the map
 if map_data and map_data["all_drawings"]:
     new_coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
     lons, lats = zip(*new_coords)
     st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
     st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
-    # Rerun to sync Sidebar inputs with the new drawing
     st.rerun()
 
 # ---------------- Main Processing ----------------
@@ -117,13 +109,29 @@ roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat,
                              st.session_state.lr_lon, st.session_state.ul_lat])
 
 col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
-collection = (ee.ImageCollection(col_id).filterBounds(roi).filterDate(str(start_date), str(end_date))
-              .map(lambda img: mask_clouds(img, satellite)).sort("system:time_start").limit(30))
 
-count = collection.size().getInfo()
+# Build the initial collection
+full_collection = (ee.ImageCollection(col_id)
+                  .filterBounds(roi)
+                  .filterDate(str(start_date), str(end_date))
+                  .map(lambda img: mask_clouds(img, satellite)))
 
-if count > 0:
+# Get total count available in Earth Engine
+total_available = full_collection.size().getInfo()
+
+# Limit for visualization/timelapse performance
+preview_limit = 30
+display_collection = full_collection.sort("system:time_start").limit(preview_limit)
+display_count = display_collection.size().getInfo()
+
+if total_available > 0:
     st.divider()
+    # SHOW TOTAL IMAGES FOUND
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Images in Archive", total_available)
+    m2.metric("Images in Preview", display_count)
+    m3.metric("Satellite Sensor", satellite)
+
     c1, c2 = st.columns([1, 1])
     
     vis = {"min": -1, "max": 1}
@@ -135,11 +143,11 @@ if count > 0:
 
     with c1:
         st.subheader("2. Visual Review")
-        idx = st.slider("Select Frame", 1, count, st.session_state.frame_idx)
-        img = ee.Image(collection.toList(count).get(idx-1))
+        idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
+        img = ee.Image(display_collection.toList(display_count).get(idx-1))
         
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
-        st.metric(label="Acquisition Time (UTC)", value=timestamp)
+        st.write(f"**Frame Timestamp:** {timestamp}")
         
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
@@ -151,9 +159,9 @@ if count > 0:
         fps = st.slider("Frames Per Second", 1, 15, 5)
         if st.button("🎬 Generate Animated Timelapse"):
             with st.spinner("Generating..."):
-                video_col = collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
+                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
                 st.markdown(f"### [📥 Download Result]({video_url})")
 else:
-    st.warning("No images found for this area/date range.")
+    st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
