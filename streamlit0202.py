@@ -47,18 +47,15 @@ def mask_clouds(image, satellite):
     return image.updateMask(mask)
 
 def apply_vis(image, index, cfg):
-    """Applies visualization and converts to 8-bit RGB."""
     if index == "NDVI":
         res = image.normalizedDifference([cfg['nir'], cfg['red']]).visualize(min=-0.1, max=0.8, palette=['brown', 'yellow', 'green'])
     elif index == "NDWI":
         res = image.normalizedDifference([cfg['green'], cfg['nir']]).visualize(min=-0.1, max=0.5, palette=['white', 'blue'])
     else:
         res = image.visualize(bands=[cfg['red'], cfg['green'], cfg['blue']], min=0, max=cfg['max'])
-    
-    # Keep the timestamp for video labeling
     return res.set('system:time_start', image.get('system:time_start'))
 
-# ---------------- Sidebar Settings ----------------
+# ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("⚙️ Settings")
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
@@ -76,7 +73,7 @@ with st.sidebar:
     start_date = st.date_input("Start", date(2023, 1, 1))
     end_date = st.date_input("End", date(2023, 6, 1))
 
-# ---------------- Map Logic ----------------
+# ---------------- Map ----------------
 st.subheader("1. Define Area of Interest")
 map_center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
 m = folium.Map(location=map_center, zoom_start=10)
@@ -100,18 +97,22 @@ if satellite == "Sentinel-2":
 else:
     cfg = {"id": f"LANDSAT/LC0{satellite[-1]}/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "max": 20000}
 
+# Filter and sort collection
 collection = (ee.ImageCollection(cfg["id"])
               .filterBounds(roi)
               .filterDate(str(start_date), str(end_date))
               .map(lambda img: mask_clouds(img, satellite))
               .sort("system:time_start"))
 
+# Limit the collection to 50 frames to prevent the "Cloud Call" error
+collection = collection.limit(50) 
+
 total_count = int(collection.size().getInfo())
 
 if total_count > 0:
     # ---------------- Manual Scrubber ----------------
     st.divider()
-    st.subheader(f"2. Preview Frames ({total_count} found)")
+    st.subheader(f"2. Preview ({total_count} frames)")
     
     frame_idx = st.slider("Select Frame", 1, total_count, st.session_state.frame_idx)
     st.session_state.frame_idx = frame_idx
@@ -119,41 +120,43 @@ if total_count > 0:
     img_list = collection.toList(total_count)
     selected_img = ee.Image(img_list.get(frame_idx - 1))
     
-    # PRECISION TIMESTAMP LOGIC
     timestamp = selected_img.get('system:time_start').getInfo()
     dt_object = datetime.fromtimestamp(float(timestamp) / 1000.0, tz=timezone.utc)
     acq_datetime = dt_object.strftime('%B %d, %Y | %H:%M:%S UTC')
 
-    st.info(f"📅 **Selected Date & Time:** {acq_datetime}")
+    st.info(f"📅 **Selected:** {acq_datetime}")
     
     vis_img = apply_vis(selected_img, parameter, cfg)
     thumb_url = vis_img.getThumbURL({'dimensions': 1024, 'region': roi, 'format': 'png'})
-    st.image(thumb_url, use_container_width=True, caption=f"Precise Overpass: {acq_datetime}")
+    st.image(thumb_url, use_container_width=True)
 
-    # ---------------- Video Generation ----------------
+    # ---------------- Video Generation (Fixed) ----------------
     st.divider()
-    st.subheader("3. 🎬 Generate Animated Time-Lapse")
+    st.subheader("3. 🎬 Time-Lapse")
     
     c1, c2 = st.columns([1, 2])
     with c1:
-        fps = st.slider("Frames Per Second", 1, 15, 5)
+        fps = st.slider("FPS", 1, 15, 5)
         video_btn = st.button("Create Animation")
     
     if video_btn:
-        with st.spinner("Compiling video... this may take a minute."):
-            # Map visualization over the whole collection
-            video_col = collection.map(lambda img: apply_vis(img, parameter, cfg))
-            
-            video_url = video_col.getVideoThumbURL({
-                'dimensions': 720,
-                'region': roi,
-                'framesPerSecond': fps,
-                'format': 'gif'
-            })
-            
-            with c2:
-                st.image(video_url, caption=f"Time-Lapse ({parameter})")
-                st.markdown(f"🔗 [Download Animation]({video_url})")
+        with st.spinner("Processing... if this fails, draw a smaller box."):
+            try:
+                video_col = collection.map(lambda img: apply_vis(img, parameter, cfg))
+                
+                # Optimized video parameters to prevent the 351/Cloud Call error
+                video_url = video_col.getVideoThumbURL({
+                    'dimensions': 600,  # Reduced dimension
+                    'region': roi,
+                    'framesPerSecond': fps,
+                    'crs': 'EPSG:3857', # Explicit coordinate system
+                    'format': 'gif'
+                })
+                with c2:
+                    st.image(video_url)
+                    st.markdown(f"🔗 [Download]({video_url})")
+            except Exception as e:
+                st.error(f"GEE Limit Exceeded: {e}. Try a smaller map area.")
 
 else:
-    st.warning("No images found for this area/date. Try expanding your search.")
+    st.warning("No images found.")
