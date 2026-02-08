@@ -96,46 +96,43 @@ if satellite == "Sentinel-2":
 else:
     cfg = {"id": f"LANDSAT/LC0{satellite[-1]}/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "max": 20000}
 
+# Fetch collection and handle possible empty results
 collection = (ee.ImageCollection(cfg["id"])
               .filterBounds(roi)
               .filterDate(str(start_date), str(end_date))
               .map(lambda img: mask_clouds(img, satellite))
-              .sort("system:time_start")
-              .limit(50))
+              .sort("system:time_start"))
 
-total_count = int(collection.size().getInfo())
+# Limit frames to prevent server timeout
+count_info = collection.size().getInfo()
 
-if total_count > 0:
+if count_info > 0:
     st.divider()
-    st.subheader(f"2. Previewing {total_count} Frames")
+    st.subheader(f"2. Previewing {min(count_info, 50)} Frames")
     
-    frame_idx = st.slider("Select Frame", 1, total_count, st.session_state.frame_idx)
-    st.session_state.frame_idx = frame_idx
+    # We only preview the first 50 to keep things fast
+    limited_col = collection.limit(50)
+    display_count = min(count_info, 50)
+    
+    frame_idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
+    st.session_state.frame_idx = min(frame_idx, display_count)
 
-    img_list = collection.toList(total_count)
-    selected_img = ee.Image(img_list.get(frame_idx - 1))
-    
-    # Metadata extraction
-    timestamp = selected_img.get('system:time_start').getInfo()
-    dt_object = datetime.fromtimestamp(float(timestamp) / 1000.0, tz=timezone.utc)
-    acq_datetime = dt_object.strftime('%B %d, %Y | %H:%M:%S UTC')
-
-    st.success(f"📅 **Precise Overpass:** {acq_datetime}")
-    
-    # --- FAIL-SAFE THUMBNAIL LOGIC ---
-    vis_img = apply_vis(selected_img, parameter, cfg)
-    
+    # Use a Try-Except block for metadata to prevent crashes
     try:
-        # Attempt 1: Standard Resolution
+        img_list = limited_col.toList(display_count)
+        selected_img = ee.Image(img_list.get(st.session_state.frame_idx - 1))
+        timestamp = selected_img.get('system:time_start').getInfo()
+        dt_object = datetime.fromtimestamp(float(timestamp) / 1000.0, tz=timezone.utc)
+        acq_datetime = dt_object.strftime('%B %d, %Y | %H:%M:%S UTC')
+        st.success(f"📅 **Precise Overpass:** {acq_datetime}")
+        
+        # Rendering
+        vis_img = apply_vis(selected_img, parameter, cfg)
         thumb_url = vis_img.getThumbURL({'dimensions': 800, 'region': roi, 'format': 'png', 'crs': 'EPSG:3857'})
         st.image(thumb_url, use_container_width=True)
-    except:
-        try:
-            # Attempt 2: Lower Resolution (Auto-scaling)
-            thumb_url = vis_img.getThumbURL({'dimensions': 400, 'region': roi, 'format': 'png', 'crs': 'EPSG:3857'})
-            st.image(thumb_url, use_container_width=True, caption="Lower resolution due to large area size.")
-        except Exception as e:
-            st.error(f"Area is too large for Earth Engine to render. Please draw a smaller box on the map.")
+        
+    except Exception as e:
+        st.error(f"Error loading frame: {e}. Try selecting a smaller area or different date.")
 
     # ---------------- Video Generation ----------------
     st.divider()
@@ -147,8 +144,7 @@ if total_count > 0:
         if st.button("Generate Video"):
             with st.spinner("Processing video..."):
                 try:
-                    video_col = collection.map(lambda img: apply_vis(img, parameter, cfg))
-                    # Video uses even lower dimensions to ensure server success
+                    video_col = limited_col.map(lambda img: apply_vis(img, parameter, cfg))
                     video_url = video_col.getVideoThumbURL({
                         'dimensions': 480,
                         'region': roi,
@@ -156,14 +152,9 @@ if total_count > 0:
                         'format': 'gif',
                         'crs': 'EPSG:3857'
                     })
-                    st.session_state.video_url = video_url
+                    st.image(video_url, caption="Generated Time-Lapse")
                 except Exception as ve:
-                    st.error("Video failed. Try selecting a smaller area or fewer dates.")
-
-    if "video_url" in st.session_state and st.session_state.video_url:
-        with c2:
-            st.image(st.session_state.video_url, caption="Generated Time-Lapse")
-            st.markdown(f"📥 [Download GIF]({st.session_state.video_url})")
+                    st.error(f"Video Generation Error: {ve}")
 
 else:
-    st.warning("No imagery found. Try a different location or date range.")
+    st.warning("No imagery found. Try a different location or wider date range.")
