@@ -4,157 +4,250 @@ import folium
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
-from datetime import date, datetime, timezone
+from datetime import date, datetime
+import numpy as np
+from io import BytesIO
+from PIL import Image
 
 # ---------------- Page Config ----------------
-st.set_page_config(layout="wide", page_title="GEE Precision Animator")
-st.title("🌍 Resilient Satellite Data Viewer")
+st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
+st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
-for k, v in {"ul_lat": 23.5, "ul_lon": 77.0, "lr_lat": 21.5, "lr_lon": 79.0, "frame_idx": 1}.items():
+for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx", "is_playing", "parameter"]:
     if k not in st.session_state:
-        st.session_state[k] = v
+        st.session_state[k] = None
+
+# Initialize `frame_idx` and `is_playing` if not set already
+if st.session_state.frame_idx is None:
+    st.session_state.frame_idx = 1
+
+if st.session_state.is_playing is None:
+    st.session_state.is_playing = False
+
+if st.session_state.parameter is None:
+    st.session_state.parameter = "Level1"
 
 # ---------------- EE Init ----------------
 def initialize_ee():
     try:
-        ee.Initialize()
-    except Exception:
-        try:
-            if "GCP_SERVICE_ACCOUNT_JSON" in st.secrets:
-                info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
-                creds = service_account.Credentials.from_service_account_info(
-                    info, scopes=["https://www.googleapis.com/auth/earthengine"]
-                )
-                ee.Initialize(creds)
-            else:
-                st.error("GCP_SERVICE_ACCOUNT_JSON not found in secrets.")
-                st.stop()
-        except Exception as e:
-            st.error(f"Authentication Error: {e}")
-            st.stop()
+        # Authenticate and initialize Earth Engine
+        service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
+        )
+        ee.Initialize(credentials)  # Initialize Earth Engine with service account credentials
+        st.success("Earth Engine initialized successfully.")
+    except Exception as e:
+        st.error(f"Error initializing Earth Engine: {e}")
 
 initialize_ee()
 
-# ---------------- Processing Functions ----------------
+# ---------------- Cloud Masking Functions ----------------
 def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
         qa = image.select('QA60')
-        mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
-    else:
+        cloud_bit_mask = 1 << 10
+        cirrus_bit_mask = 1 << 11
+        mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(qa.bitwiseAnd(cirrus_bit_mask).eq(0))
+        return image.updateMask(mask)
+   
+    elif satellite in ["Landsat-8", "Landsat-9"]:
         qa = image.select('QA_PIXEL')
-        mask = qa.bitwiseAnd(1 << 3).eq(0).And(qa.bitwiseAnd(1 << 4).eq(0))
-    return image.updateMask(mask)
-
-def apply_vis(image, index, cfg):
-    if index == "NDVI":
-        res = image.normalizedDifference([cfg['nir'], cfg['red']]).visualize(min=-0.1, max=0.8, palette=['brown', 'yellow', 'green'])
-    elif index == "NDWI":
-        res = image.normalizedDifference([cfg['green'], cfg['nir']]).visualize(min=-0.1, max=0.5, palette=['white', 'blue'])
+        cloud_bit_mask = 1 << 3
+        shadow_bit_mask = 1 << 4
+        mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(qa.bitwiseAnd(shadow_bit_mask).eq(0))
+        return image.updateMask(mask)
+   
     else:
-        res = image.visualize(bands=[cfg['red'], cfg['green'], cfg['blue']], min=0, max=cfg['max'])
-    return res.set('system:time_start', image.get('system:time_start'))
+        raise ValueError(f"Unsupported satellite: {satellite}")
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
-    st.header("⚙️ Settings")
-    satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
-    parameter = st.selectbox("Parameter", ["Level 1", "NDVI", "NDWI"])
+    st.header("🧭 Area of Interest")
+    st.info("Draw a rectangle on the map to define your ROI.")
+    if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_lat and st.session_state.lr_lon:
+        st.write(f"**Upper Left Corner**: Latitude: {st.session_state.ul_lat}, Longitude: {st.session_state.ul_lon}")
+        st.write(f"**Lower Right Corner**: Latitude: {st.session_state.lr_lat}, Longitude: {st.session_state.lr_lon}")
+    else:
+        st.write("Draw a rectangle on the map to define your area.")
+
+    st.header("✏️ Edit Coordinates")
+    ul_lat = st.number_input("Upper Left Latitude", value=st.session_state.ul_lat, format="%.6f")
+    ul_lon = st.number_input("Upper Left Longitude", value=st.session_state.ul_lon, format="%.6f")
+    lr_lat = st.number_input("Lower Right Latitude", value=st.session_state.lr_lat, format="%.6f")
+    lr_lon = st.number_input("Lower Right Longitude", value=st.session_state.lr_lon, format="%.6f")
+    st.session_state.ul_lat = ul_lat
+    st.session_state.ul_lon = ul_lon
+    st.session_state.lr_lat = lr_lat
+    st.session_state.lr_lon = lr_lon
+
+    st.header("📅 Date Filter")
+    start_date = st.date_input("Start Date", date(2023, 1, 1))
+    end_date = st.date_input("End Date", date(2023, 12, 31))
+
+    st.header("🛰️ Satellite")
+    satellite = st.selectbox(
+        "Select Satellite",
+        ["Sentinel-2", "Landsat-8", "Landsat-9"]
+    )
     
-    st.subheader("📍 Coordinates")
-    ul_lat = st.number_input("Upper Lat", value=st.session_state.ul_lat, format="%.6f")
-    ul_lon = st.number_input("Upper Lon", value=st.session_state.ul_lon, format="%.6f")
-    lr_lat = st.number_input("Lower Lat", value=st.session_state.lr_lat, format="%.6f")
-    lr_lon = st.number_input("Lower Lon", value=st.session_state.lr_lon, format="%.6f")
-    
-    st.session_state.ul_lat, st.session_state.ul_lon = ul_lat, ul_lon
-    st.session_state.lr_lat, st.session_state.lr_lon = lr_lat, lr_lon
+    st.header("📊 Select Parameter")
+    parameter = st.selectbox(
+        "Choose the Parameter",
+        ["Level1", "NDVI", "EVI", "NDWI", "SAVI", "NDSI", "MNDWI"]
+    )
+    st.session_state.parameter = parameter
 
-    start_date = st.date_input("Start", date(2023, 1, 1))
-    end_date = st.date_input("End", date(2023, 12, 31))
+# ---------------- Map Selection ----------------
+st.subheader("1. Select your Area")
+m = folium.Map(location=[22.0, 69.0], zoom_start=6)
+draw = Draw(draw_options={"polyline": False, "polygon": False, "circle": False,
+                          "marker": False, "circlemarker": False, "rectangle": True})
+draw.add_to(m)
 
-# ---------------- Map ----------------
-st.subheader("1. Area Selection")
-map_center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
-m = folium.Map(location=map_center, zoom_start=10)
-Draw(draw_options={"polyline": False, "polygon": False, "circle": False, "rectangle": True}).add_to(m)
-map_data = st_folium(m, height=350, width="100%", key="roi_map")
+map_data = st_folium(m, height=400, width="100%", key="roi_map")
 
-if map_data and map_data.get("all_drawings"):
-    coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
-    lons, lats = zip(*coords)
-    st.session_state.ul_lat, st.session_state.lr_lat = max(lats), min(lats)
-    st.session_state.ul_lon, st.session_state.lr_lon = min(lons), max(lons)
-    st.rerun()
+if map_data and map_data["all_drawings"]:
+    geom = map_data["all_drawings"][-1]["geometry"]
+    coords = geom["coordinates"][0]
+    lats, lons = [c[1] for c in coords], [c[0] for c in coords]
+    st.session_state.ul_lat = min(lats)
+    st.session_state.ul_lon = min(lons)
+    st.session_state.lr_lat = max(lats)
+    st.session_state.lr_lon = max(lons)
 
-# ---------------- GEE Processing ----------------
-roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
-                             st.session_state.lr_lon, st.session_state.ul_lat])
+# ---------------- Processing Logic ----------------
+roi = None
+if st.session_state.ul_lat and st.session_state.ul_lon and st.session_state.lr_lat and st.session_state.lr_lon:
+    roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat,
+                                 st.session_state.lr_lon, st.session_state.lr_lat])
 
-if satellite == "Sentinel-2":
-    cfg = {"id": "COPERNICUS/S2_SR_HARMONIZED", "red": "B4", "green": "B3", "blue": "B2", "nir": "B8", "max": 3500}
-else:
-    cfg = {"id": f"LANDSAT/LC0{satellite[-1]}/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "max": 20000}
+    collection_ids = {
+        "Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
+        "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
+        "Landsat-9": "LANDSAT/LC09/C02/T1_L2",
+    }
 
-# Fetch collection and handle possible empty results
-collection = (ee.ImageCollection(cfg["id"])
-              .filterBounds(roi)
-              .filterDate(str(start_date), str(end_date))
-              .map(lambda img: mask_clouds(img, satellite))
-              .sort("system:time_start"))
+    collection = (ee.ImageCollection(collection_ids[satellite])
+                  .filterBounds(roi)
+                  .filterDate(str(start_date), str(end_date))
+                  .map(lambda img: mask_clouds(img, satellite))  # Map with cloud masking
+                  .sort("system:time_start")
+                  .limit(30))  # Limit to a smaller number of frames (e.g., 30)
 
-# Limit frames to prevent server timeout
-count_info = collection.size().getInfo()
+    total_count = collection.size().getInfo()
 
-if count_info > 0:
-    st.divider()
-    st.subheader(f"2. Previewing {min(count_info, 50)} Frames")
-    
-    # We only preview the first 50 to keep things fast
-    limited_col = collection.limit(50)
-    display_count = min(count_info, 50)
-    
-    frame_idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
-    st.session_state.frame_idx = min(frame_idx, display_count)
+    def get_frame_date(image):
+        """Extracts the acquisition date."""
+        timestamp = ee.Date(image.get("system:time_start"))
+        timestamp_seconds = timestamp.millis().divide(1000)  # Convert to seconds
+        timestamp_python = datetime.utcfromtimestamp(timestamp_seconds.getInfo())  # Convert to Python datetime
+        formatted_date = timestamp_python.strftime('%Y-%m-%d')  # Format date
+        formatted_time = timestamp_python.strftime('%H:%M:%S')  # Format time
+        return formatted_date, formatted_time
 
-    # Use a Try-Except block for metadata to prevent crashes
-    try:
-        img_list = limited_col.toList(display_count)
-        selected_img = ee.Image(img_list.get(st.session_state.frame_idx - 1))
-        timestamp = selected_img.get('system:time_start').getInfo()
-        dt_object = datetime.fromtimestamp(float(timestamp) / 1000.0, tz=timezone.utc)
-        acq_datetime = dt_object.strftime('%B %d, %Y | %H:%M:%S UTC')
-        st.success(f"📅 **Precise Overpass:** {acq_datetime}")
-        
-        # Rendering
-        vis_img = apply_vis(selected_img, parameter, cfg)
-        thumb_url = vis_img.getThumbURL({'dimensions': 800, 'region': roi, 'format': 'png', 'crs': 'EPSG:3857'})
-        st.image(thumb_url, use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"Error loading frame: {e}. Try selecting a smaller area or different date.")
+    # Parameter Selection Logic (e.g., NDVI, EVI)
+    def apply_parameter(image, parameter):
+        if parameter == "NDVI":
+            ndvi = image.normalizedDifference(['B8', 'B4'])  # Red and NIR bands for NDVI
+            return ndvi.rename("NDVI")
+        elif parameter == "EVI":
+            evi = image.expression(
+                'G * ((B8 - B4) / (B8 + C1 * B4 - C2 * B3 + L))',
+                {
+                    'B8': image.select('B8'),  # NIR band
+                    'B4': image.select('B4'),  # Red band
+                    'B3': image.select('B3'),  # Blue band
+                    'L': 10000,  # Gain factor
+                    'C1': 6.0,   # Coefficient for Blue band
+                    'C2': 7.5,   # Coefficient for Red band
+                    'G': 2.5     # Gain factor
+                }
+            ).rename("EVI")
+            return evi
+        elif parameter == "NDWI":
+            ndwi = image.normalizedDifference(['B3', 'B8'])  # Green and NIR bands for NDWI
+            return ndwi.rename("NDWI")
+        elif parameter == "SAVI":
+            savi = image.expression(
+                '((B8 - B4) * (1 + L)) / (B8 + B4 + L)',
+                {
+                    'B8': image.select('B8'),  # NIR band
+                    'B4': image.select('B4'),  # Red band
+                    'L': 0.5  # Soil brightness correction factor
+                }
+            ).rename("SAVI")
+            return savi
+        elif parameter == "NDSI":
+            ndsi = image.normalizedDifference(['B3', 'B11'])  # Green and SWIR for NDSI
+            return ndsi.rename("NDSI")
+        elif parameter == "MNDWI":
+            mndwi = image.normalizedDifference(['B3', 'B11'])  # Green and SWIR for MNDWI
+            return mndwi.rename("MNDWI")
+        else:
+            return image  # Default to Level1
 
-    # ---------------- Video Generation ----------------
-    st.divider()
-    st.subheader("3. 🎬 Create Animation")
-    
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        fps = st.slider("Speed (FPS)", 1, 15, 5)
-        if st.button("Generate Video"):
-            with st.spinner("Processing video..."):
-                try:
-                    video_col = limited_col.map(lambda img: apply_vis(img, parameter, cfg))
-                    video_url = video_col.getVideoThumbURL({
-                        'dimensions': 480,
-                        'region': roi,
-                        'framesPerSecond': fps,
-                        'format': 'gif',
-                        'crs': 'EPSG:3857'
-                    })
-                    st.image(video_url, caption="Generated Time-Lapse")
-                except Exception as ve:
-                    st.error(f"Video Generation Error: {ve}")
+    if total_count > 0:
+        st.divider()
+        col1, col2 = st.columns([1, 1])
 
-else:
-    st.warning("No imagery found. Try a different location or wider date range.")
+        with col1:
+            st.subheader("2. Manual Frame Scrubber")
+            
+            # Ensure that the frame index is within the bounds of the collection
+            if "frame_idx" not in st.session_state or st.session_state.frame_idx < 1:
+                st.session_state.frame_idx = 1
+            elif st.session_state.frame_idx > total_count:
+                st.session_state.frame_idx = total_count
+
+            frame_idx = st.slider("Slide to 'play' through time", 1, total_count, st.session_state.frame_idx)
+
+            # Use the frame index to get the image from the collection
+            img_list = collection.toList(total_count)
+            selected_img = ee.Image(img_list.get(frame_idx - 1))  # Access the image at the correct index
+
+            # Apply the selected parameter (e.g., NDVI, EVI)
+            selected_img = apply_parameter(selected_img, st.session_state.parameter)
+
+            # Extract the date and time of acquisition
+            frame_date, frame_time = get_frame_date(selected_img)
+            st.caption(f"Showing Frame {frame_idx} | Date of Acquisition: {frame_date} | Time: {frame_time}")
+
+            vis = {"bands": [st.session_state.parameter], "min": -1, "max": 1}  # Visualization settings
+
+            map_id = selected_img.clip(roi).getMapId(vis)
+
+            frame_map = folium.Map(location=[sum(lats)/len(lats), sum(lons)/len(lons)], zoom_start=12)
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="Google Earth Engine",
+                overlay=True,
+                control=False
+            ).add_to(frame_map)
+            
+            st_folium(frame_map, height=400, width="100%", key=f"frame_{frame_idx}")
+
+        with col2:
+            st.subheader("3. Export Timelapse")
+            fps = st.number_input("Frames Per Second", min_value=1, max_value=20, value=5)
+
+            if st.button("🎬 Generate Animated Video"):
+                with st.spinner("Stitching images..."):
+                    video_collection = collection.map(lambda img: apply_parameter(img, st.session_state.parameter).visualize(**vis).clip(roi))
+                    
+                    try:
+                        video_url = video_collection.getVideoThumbURL({
+                            'dimensions': 400,  # Adjust dimensions to your needs
+                            'region': roi,
+                            'framesPerSecond': fps,
+                            'crs': 'EPSG:3857'
+                        })
+
+                        # Display the generated timelapse video with frame-specific date and time
+                        st.image(video_url, caption="Generated Timelapse", use_container_width=True)
+                        st.markdown(f"[📥 Download GIF]({video_url})")
+
+                    except Exception as e:
+                        st.error(f"Error generating video: {e}")
