@@ -11,12 +11,12 @@ st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
-for k in ["ul_lat", "ul_lon", "lr_lat", "lr_lon", "frame_idx"]:
-    if k not in st.session_state:
-        st.session_state[k] = None
-
-if st.session_state.frame_idx is None:
-    st.session_state.frame_idx = 1
+# Initialize session state for coordinates if not present
+if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
+if "ul_lon" not in st.session_state: st.session_state.ul_lon = 69.5
+if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
+if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
+if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -32,8 +32,6 @@ def initialize_ee():
                 )
                 ee.Initialize(credentials)
                 st.sidebar.success("Earth Engine Initialized")
-            else:
-                st.error("Secrets not found. Check Streamlit Cloud configuration.")
         except Exception as e:
             st.sidebar.error(f"EE Init Error: {e}")
 
@@ -57,147 +55,105 @@ def mask_clouds(image, satellite):
 
 def apply_parameter(image, parameter, satellite):
     bm = get_band_map(satellite)
-    if parameter == "Level1":
-        return image
-    
-    if parameter == "NDVI":
-        idx = image.normalizedDifference([bm['nir'], bm['red']])
-    elif parameter == "NDWI":
-        idx = image.normalizedDifference([bm['green'], bm['nir']])
-    elif parameter == "MNDWI":
-        idx = image.normalizedDifference([bm['green'], bm['swir1']])
-    elif parameter == "EVI":
-        idx = image.expression(
-            '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
+    if parameter == "Level1": return image
+    if parameter == "NDVI": return image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
+    if parameter == "NDWI": return image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
+    if parameter == "MNDWI": return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
+    if parameter == "EVI":
+        return image.expression('2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
             {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red']), 'BLUE': image.select(bm['blue'])}
-        )
-    elif parameter == "SAVI":
-        idx = image.expression(
-            '((NIR - RED) * 1.5) / (NIR + RED + 0.5)',
-            {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red'])}
-        )
-    return idx.rename(parameter)
+        ).rename(parameter)
+    return image
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
-    st.header("📅 Configuration")
-    start_date = st.date_input("Start Date", date(2024, 1, 1))
-    end_date = st.date_input("End Date", date(2024, 12, 31))
-    satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
+    st.header("📍 Coordinate Editor")
+    # Manual Input Fields
+    u_lat = st.number_input("Upper Lat", value=float(st.session_state.ul_lat), format="%.4f")
+    u_lon = st.number_input("Left Lon", value=float(st.session_state.ul_lon), format="%.4f")
+    l_lat = st.number_input("Lower Lat", value=float(st.session_state.lr_lat), format="%.4f")
+    l_lon = st.number_input("Right Lon", value=float(st.session_state.lr_lon), format="%.4f")
     
-    st.header("📊 Analysis")
-    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI", "SAVI"])
-    
-    st.header("🎨 Palette")
-    palette_choice = st.selectbox(
-        "Color Theme",
-        ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "Terrain (Brown)", "No Color (Grayscale)"]
-    )
+    # Update session state from manual input
+    st.session_state.ul_lat, st.session_state.ul_lon = u_lat, u_lon
+    st.session_state.lr_lat, st.session_state.lr_lon = l_lat, l_lon
 
+    st.header("📅 Configuration")
+    start_date = st.date_input("Start Date", date(2025, 1, 1))
+    end_date = st.date_input("End Date", date(2025, 12, 31))
+    satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
+    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
+    
+    palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
     palettes = {
         "Vegetation (Green)": ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301'],
         "Water (Blue)": ['#ffffd9', '#7fcdbb', '#41b6c4', '#1d91c0', '#0c2c84'],
         "Thermal (Red)": ['#ffffff', '#fc9272', '#ef3b2c', '#a50f15', '#67000d'],
-        "Terrain (Brown)": ['#332808', '#946920', '#30eb5b', '#134e1c'],
         "No Color (Grayscale)": None 
     }
     selected_palette = palettes[palette_choice]
 
 # ---------------- Map Selection ----------------
-st.subheader("1. Select Area of Interest")
-m = folium.Map(location=[22.0, 69.0], zoom_start=6)
+st.subheader("1. Area Selection (Draw or Edit Sidebar)")
+# Calculate center for initial map view
+center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
+m = folium.Map(location=center, zoom_start=8)
 Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True}).add_to(m)
+
+# Trigger map display
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
+# Update coordinates if user draws on the map
 if map_data and map_data["all_drawings"]:
-    coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
-    lons, lats = zip(*coords)
-    st.session_state.ul_lat, st.session_state.ul_lon = min(lats), min(lons)
-    st.session_state.lr_lat, st.session_state.lr_lon = max(lats), max(lons)
+    new_coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
+    lons, lats = zip(*new_coords)
+    st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
+    st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
+    # Rerun to sync Sidebar inputs with the new drawing
+    st.rerun()
 
 # ---------------- Main Processing ----------------
-if st.session_state.ul_lat:
-    roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.ul_lat, 
-                                 st.session_state.lr_lon, st.session_state.lr_lat])
+roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
+                             st.session_state.lr_lon, st.session_state.ul_lat])
+
+col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
+collection = (ee.ImageCollection(col_id).filterBounds(roi).filterDate(str(start_date), str(end_date))
+              .map(lambda img: mask_clouds(img, satellite)).sort("system:time_start").limit(30))
+
+count = collection.size().getInfo()
+
+if count > 0:
+    st.divider()
+    c1, c2 = st.columns([1, 1])
     
-    col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", 
-              "Landsat-8": "LANDSAT/LC08/C02/T1_L2", 
-              "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
+    vis = {"min": -1, "max": 1}
+    if parameter == "Level1":
+        bm = get_band_map(satellite)
+        vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
+    elif selected_palette:
+        vis["palette"] = selected_palette
 
-    collection = (ee.ImageCollection(col_id)
-                  .filterBounds(roi)
-                  .filterDate(str(start_date), str(end_date))
-                  .map(lambda img: mask_clouds(img, satellite))
-                  .sort("system:time_start")
-                  .limit(30))
-
-    try:
-        count = collection.size().getInfo()
-    except Exception as e:
-        st.error(f"Error fetching collection: {e}")
-        count = 0
-
-    if count > 0:
-        st.divider()
-        c1, c2 = st.columns([1, 1])
+    with c1:
+        st.subheader("2. Visual Review")
+        idx = st.slider("Select Frame", 1, count, st.session_state.frame_idx)
+        img = ee.Image(collection.toList(count).get(idx-1))
         
-        # Consistent Visualization Logic
-        if parameter == "Level1":
-            bm = get_band_map(satellite)
-            max_val = 3000 if "Sentinel" in satellite else 15000 
-            vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": max_val}
-        else:
-            vis = {"min": -1, "max": 1}
-            if selected_palette:
-                vis["palette"] = selected_palette
+        timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
+        st.metric(label="Acquisition Time (UTC)", value=timestamp)
+        
+        map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
+        f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
+        folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
+        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
-        with c1:
-            st.subheader("2. Visual Review")
-            idx = st.slider("Select Frame", 1, count, st.session_state.frame_idx)
-            st.session_state.frame_idx = idx
-            
-            img_list = collection.toList(count)
-            img = ee.Image(img_list.get(idx-1))
-            processed_img = apply_parameter(img, parameter, satellite)
-            
-            # Timestamp Display
-            timestamp = ee.Date(img.get("system:time_start"))
-            date_time_str = timestamp.format("YYYY-MM-DD HH:mm:ss").getInfo()
-            st.metric(label="Acquisition Time (UTC)", value=date_time_str)
-            
-            try:
-                map_id = processed_img.clip(roi).getMapId(vis)
-                center_lat = (st.session_state.ul_lat + st.session_state.lr_lat) / 2
-                center_lon = (st.session_state.ul_lon + st.session_state.lr_lon) / 2
-                
-                f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
-                folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-                
-                # --- DYNAMIC KEY FIX ---
-                # We use a combined key of index, parameter, and palette to force a redraw
-                st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
-            except Exception as e:
-                st.error(f"Review Map Rendering Error: {e}")
-
-        with c2:
-            st.subheader("3. Export")
-            fps = st.slider("Frames Per Second", 1, 15, 5)
-            
-            if st.button("🎬 Generate Animated Timelapse"):
-                with st.spinner("Generating video..."):
-                    try:
-                        video_col = collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
-                        video_url = video_col.getVideoThumbURL({
-                            'dimensions': 720, 
-                            'region': roi, 
-                            'framesPerSecond': fps, 
-                            'crs': 'EPSG:3857'
-                        })
-                        st.image(video_url, caption=f"{parameter} Timelapse ({satellite})")
-                        st.markdown(f"### [📥 Download Result]({video_url})")
-                    except Exception as e:
-                        st.error(f"Video Generation Error: {e}")
-    else:
-        st.warning("No images found. Adjust your date range or ROI.")
+    with c2:
+        st.subheader("3. Export")
+        fps = st.slider("Frames Per Second", 1, 15, 5)
+        if st.button("🎬 Generate Animated Timelapse"):
+            with st.spinner("Generating..."):
+                video_col = collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
+                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
+                st.image(video_url, caption=f"Timelapse: {parameter}")
+                st.markdown(f"### [📥 Download Result]({video_url})")
 else:
-    st.info("💡 Draw a rectangle on the map to define your study area.")
+    st.warning("No images found for this area/date range.")
