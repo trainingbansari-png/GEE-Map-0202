@@ -20,9 +20,7 @@ if st.session_state.frame_idx is None:
 
 # ---------------- EE Init ----------------
 def initialize_ee():
-    """Initializes Earth Engine using service account secrets."""
     try:
-        # Check if already initialized publically
         ee.GetLibraryVersion()
     except Exception:
         try:
@@ -43,14 +41,12 @@ initialize_ee()
 
 # ---------------- Helper Functions ----------------
 def get_band_map(satellite):
-    """Maps common names to satellite-specific band IDs."""
     if "Sentinel" in satellite:
         return {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B8', 'swir1': 'B11'}
     else: 
         return {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B5', 'swir1': 'B6'}
 
 def mask_clouds(image, satellite):
-    """Applies cloud masking based on satellite-specific QA bands."""
     if "Sentinel" in satellite:
         qa = image.select('QA60')
         mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
@@ -60,7 +56,6 @@ def mask_clouds(image, satellite):
     return image.updateMask(mask)
 
 def apply_parameter(image, parameter, satellite):
-    """Calculates remote sensing indices."""
     bm = get_band_map(satellite)
     if parameter == "Level1":
         return image
@@ -160,6 +155,13 @@ if st.session_state.ul_lat:
             img = ee.Image(collection.toList(count).get(idx-1))
             processed_img = apply_parameter(img, parameter, satellite)
             
+            # --- DATE AND TIME EXTRACTION ---
+            timestamp = ee.Date(img.get("system:time_start"))
+            date_time_str = timestamp.format("YYYY-MM-DD HH:mm:ss").getInfo()
+            
+            # Displaying as metrics for better UI
+            st.metric(label="Acquisition Timestamp (UTC)", value=date_time_str)
+            
             try:
                 map_id = processed_img.clip(roi).getMapId(vis)
                 center_lat = (st.session_state.ul_lat + st.session_state.lr_lat) / 2
@@ -168,9 +170,6 @@ if st.session_state.ul_lat:
                 f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
                 folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
                 st_folium(f_map, height=400, width="100%", key=f"viewer_{idx}")
-                
-                date_str = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD").getInfo()
-                st.info(f"Frame {idx} of {count} | Date: {date_str}")
             except Exception as e:
                 st.error(f"Map Rendering Error: {e}")
 
