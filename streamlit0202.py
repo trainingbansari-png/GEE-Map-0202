@@ -7,8 +7,8 @@ from google.oauth2 import service_account
 from datetime import date, datetime, timezone
 
 # ---------------- Page Config ----------------
-st.set_page_config(layout="wide", page_title="GEE Satellite Time-Lapse")
-st.title("🌍 GEE Satellite Data Viewer & Animator")
+st.set_page_config(layout="wide", page_title="GEE Precision Animator")
+st.title("🌍 Resilient Satellite Data Viewer")
 
 # ---------------- Session State ----------------
 for k, v in {"ul_lat": 23.5, "ul_lon": 77.0, "lr_lat": 21.5, "lr_lon": 79.0, "frame_idx": 1}.items():
@@ -41,7 +41,7 @@ def mask_clouds(image, satellite):
     if satellite == "Sentinel-2":
         qa = image.select('QA60')
         mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
-    else: # Landsat
+    else:
         qa = image.select('QA_PIXEL')
         mask = qa.bitwiseAnd(1 << 3).eq(0).And(qa.bitwiseAnd(1 << 4).eq(0))
     return image.updateMask(mask)
@@ -71,14 +71,13 @@ with st.sidebar:
     st.session_state.lr_lat, st.session_state.lr_lon = lr_lat, lr_lon
 
     start_date = st.date_input("Start", date(2023, 1, 1))
-    end_date = st.date_input("End", date(2023, 6, 1))
+    end_date = st.date_input("End", date(2023, 12, 31))
 
 # ---------------- Map ----------------
-st.subheader("1. Define Area of Interest")
+st.subheader("1. Area Selection")
 map_center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
 m = folium.Map(location=map_center, zoom_start=10)
 Draw(draw_options={"polyline": False, "polygon": False, "circle": False, "rectangle": True}).add_to(m)
-
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
 if map_data and map_data.get("all_drawings"):
@@ -89,13 +88,11 @@ if map_data and map_data.get("all_drawings"):
     st.rerun()
 
 # ---------------- GEE Processing ----------------
-# Standardize the ROI to a simple list for the API
-roi_coords = [st.session_state.ul_lon, st.session_state.lr_lat, 
-              st.session_state.lr_lon, st.session_state.ul_lat]
-roi = ee.Geometry.Rectangle(roi_coords)
+roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
+                             st.session_state.lr_lon, st.session_state.ul_lat])
 
 if satellite == "Sentinel-2":
-    cfg = {"id": "COPERNICUS/S2_SR_HARMONIZED", "red": "B4", "green": "B3", "blue": "B2", "nir": "B8", "max": 3000}
+    cfg = {"id": "COPERNICUS/S2_SR_HARMONIZED", "red": "B4", "green": "B3", "blue": "B2", "nir": "B8", "max": 3500}
 else:
     cfg = {"id": f"LANDSAT/LC0{satellite[-1]}/C02/T1_L2", "red": "SR_B4", "green": "SR_B3", "blue": "SR_B2", "nir": "SR_B5", "max": 20000}
 
@@ -103,16 +100,14 @@ collection = (ee.ImageCollection(cfg["id"])
               .filterBounds(roi)
               .filterDate(str(start_date), str(end_date))
               .map(lambda img: mask_clouds(img, satellite))
-              .sort("system:time_start"))
+              .sort("system:time_start")
+              .limit(50))
 
-# Limit the collection to keep metadata calls fast
-collection = collection.limit(50)
 total_count = int(collection.size().getInfo())
 
 if total_count > 0:
-    # ---------------- Manual Scrubber ----------------
     st.divider()
-    st.subheader(f"2. Preview Frames ({total_count} found)")
+    st.subheader(f"2. Previewing {total_count} Frames")
     
     frame_idx = st.slider("Select Frame", 1, total_count, st.session_state.frame_idx)
     st.session_state.frame_idx = frame_idx
@@ -120,53 +115,55 @@ if total_count > 0:
     img_list = collection.toList(total_count)
     selected_img = ee.Image(img_list.get(frame_idx - 1))
     
-    try:
-        timestamp = selected_img.get('system:time_start').getInfo()
-        dt_object = datetime.fromtimestamp(float(timestamp) / 1000.0, tz=timezone.utc)
-        acq_datetime = dt_object.strftime('%B %d, %Y | %H:%M:%S UTC')
-        st.info(f"📅 **Selected:** {acq_datetime}")
-    except:
-        acq_datetime = "Date Unknown"
+    # Metadata extraction
+    timestamp = selected_img.get('system:time_start').getInfo()
+    dt_object = datetime.fromtimestamp(float(timestamp) / 1000.0, tz=timezone.utc)
+    acq_datetime = dt_object.strftime('%B %d, %Y | %H:%M:%S UTC')
 
-    # --- Robust Thumbnail Rendering ---
+    st.success(f"📅 **Precise Overpass:** {acq_datetime}")
+    
+    # --- FAIL-SAFE THUMBNAIL LOGIC ---
     vis_img = apply_vis(selected_img, parameter, cfg)
+    
     try:
-        # Reduced dimension to 768 for better stability on large ROIs
-        thumb_url = vis_img.getThumbURL({
-            'dimensions': 768, 
-            'region': roi, 
-            'format': 'png',
-            'crs': 'EPSG:3857'
-        })
-        st.image(thumb_url, use_container_width=True, caption=f"Frame {frame_idx}: {acq_datetime}")
-    except Exception as e:
-        st.error(f"Thumbnail Error: Area too large or resolution too high. Try drawing a smaller rectangle.")
+        # Attempt 1: Standard Resolution
+        thumb_url = vis_img.getThumbURL({'dimensions': 800, 'region': roi, 'format': 'png', 'crs': 'EPSG:3857'})
+        st.image(thumb_url, use_container_width=True)
+    except:
+        try:
+            # Attempt 2: Lower Resolution (Auto-scaling)
+            thumb_url = vis_img.getThumbURL({'dimensions': 400, 'region': roi, 'format': 'png', 'crs': 'EPSG:3857'})
+            st.image(thumb_url, use_container_width=True, caption="Lower resolution due to large area size.")
+        except Exception as e:
+            st.error(f"Area is too large for Earth Engine to render. Please draw a smaller box on the map.")
 
     # ---------------- Video Generation ----------------
     st.divider()
-    st.subheader("3. 🎬 Generate Animated Time-Lapse")
+    st.subheader("3. 🎬 Create Animation")
     
     c1, c2 = st.columns([1, 2])
     with c1:
-        fps = st.slider("Frames Per Second", 1, 15, 5)
-        video_btn = st.button("Create Animation")
-    
-    if video_btn:
-        with st.spinner("Compiling video..."):
-            try:
-                video_col = collection.map(lambda img: apply_vis(img, parameter, cfg))
-                video_url = video_col.getVideoThumbURL({
-                    'dimensions': 512, # Lower res for video to ensure success
-                    'region': roi,
-                    'framesPerSecond': fps,
-                    'format': 'gif',
-                    'crs': 'EPSG:3857'
-                })
-                with c2:
-                    st.image(video_url, caption="Time-Lapse Result")
-                    st.markdown(f"📥 [Download GIF]({video_url})")
-            except Exception as e:
-                st.error(f"Video limit exceeded. Try a smaller ROI or shorter date range.")
+        fps = st.slider("Speed (FPS)", 1, 15, 5)
+        if st.button("Generate Video"):
+            with st.spinner("Processing video..."):
+                try:
+                    video_col = collection.map(lambda img: apply_vis(img, parameter, cfg))
+                    # Video uses even lower dimensions to ensure server success
+                    video_url = video_col.getVideoThumbURL({
+                        'dimensions': 480,
+                        'region': roi,
+                        'framesPerSecond': fps,
+                        'format': 'gif',
+                        'crs': 'EPSG:3857'
+                    })
+                    st.session_state.video_url = video_url
+                except Exception as ve:
+                    st.error("Video failed. Try selecting a smaller area or fewer dates.")
+
+    if "video_url" in st.session_state and st.session_state.video_url:
+        with c2:
+            st.image(st.session_state.video_url, caption="Generated Time-Lapse")
+            st.markdown(f"📥 [Download GIF]({st.session_state.video_url})")
 
 else:
-    st.warning("No images found. Adjust your area or dates.")
+    st.warning("No imagery found. Try a different location or date range.")
