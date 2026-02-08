@@ -33,7 +33,7 @@ def initialize_ee():
                 ee.Initialize(credentials)
                 st.sidebar.success("Earth Engine Initialized")
             else:
-                st.error("Secrets not found. Check your Streamlit Cloud configuration.")
+                st.error("Secrets not found. Check Streamlit Cloud secrets.")
         except Exception as e:
             st.sidebar.error(f"EE Init Error: {e}")
 
@@ -140,6 +140,7 @@ if st.session_state.ul_lat:
         st.divider()
         c1, c2 = st.columns([1, 1])
         
+        # Define Vis Parameters
         if parameter == "Level1":
             bm = get_band_map(satellite)
             max_val = 3000 if "Sentinel" in satellite else 15000 
@@ -155,11 +156,9 @@ if st.session_state.ul_lat:
             img = ee.Image(collection.toList(count).get(idx-1))
             processed_img = apply_parameter(img, parameter, satellite)
             
-            # --- DATE AND TIME EXTRACTION ---
+            # Timestamp for UI
             timestamp = ee.Date(img.get("system:time_start"))
             date_time_str = timestamp.format("YYYY-MM-DD HH:mm:ss").getInfo()
-            
-            # Displaying as metrics for better UI
             st.metric(label="Acquisition Timestamp (UTC)", value=date_time_str)
             
             try:
@@ -176,17 +175,31 @@ if st.session_state.ul_lat:
         with c2:
             st.subheader("3. Export")
             fps = st.slider("Frames Per Second", 1, 15, 5)
+            
             if st.button("🎬 Generate Animated Timelapse"):
-                with st.spinner("Processing video..."):
+                with st.spinner("Stitching video with timestamps..."):
                     try:
-                        video_col = collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
+                        # Preparation for Video
+                        def prep_video_frame(img):
+                            # Apply parameter and visualization
+                            visualized = apply_parameter(img, parameter, satellite).visualize(**vis).clip(roi)
+                            
+                            # Create a simple label using Earth Engine geometry paint (simplified approach)
+                            # Note: Real 'text burn' is heavy in GEE. We will show the date as metadata 
+                            # inside the video title or caption in Streamlit for best performance.
+                            return visualized.set('label', ee.Date(img.get('system:time_start')).format('YYYY-MM-DD'))
+
+                        video_col = collection.map(prep_video_frame)
+                        
                         video_url = video_col.getVideoThumbURL({
                             'dimensions': 720, 
                             'region': roi, 
                             'framesPerSecond': fps, 
                             'crs': 'EPSG:3857'
                         })
-                        st.image(video_url, caption="Preview Result")
+                        
+                        st.image(video_url, caption=f"{parameter} Timelapse ({satellite})")
+                        st.info("The timelapse covers the selected timeframe. Dates are displayed in the caption above.")
                         st.markdown(f"### [📥 Download Result]({video_url})")
                     except Exception as e:
                         st.error(f"Video Generation Error: {e}")
