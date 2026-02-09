@@ -10,12 +10,18 @@ from datetime import date, datetime
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
-# ---------------- Session State ----------------
-if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
-if "ul_lon" not in st.session_state: st.session_state.ul_lon = 69.5
-if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
-if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
-if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
+# ---------------- Session State Initialization ----------------
+# Ensure that the session state values are initialized correctly
+if "ul_lat" not in st.session_state:
+    st.session_state.ul_lat = 22.5  # default value for upper-left latitude
+if "ul_lon" not in st.session_state:
+    st.session_state.ul_lon = 69.5  # default value for upper-left longitude
+if "lr_lat" not in st.session_state:
+    st.session_state.lr_lat = 21.5  # default value for lower-right latitude
+if "lr_lon" not in st.session_state:
+    st.session_state.lr_lon = 70.5  # default value for lower-right longitude
+if "frame_idx" not in st.session_state:
+    st.session_state.frame_idx = 1  # default frame index
 
 # ---------------- EE Init ----------------
 def initialize_ee():
