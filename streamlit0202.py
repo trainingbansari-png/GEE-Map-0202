@@ -80,15 +80,6 @@ with st.sidebar:
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
     parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
-    
-    palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
-    palettes = {
-        "Vegetation (Green)": ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301'],
-        "Water (Blue)": ['#ffffd9', '#7fcdbb', '#41b6c4', '#1d91c0', '#0c2c84'],
-        "Thermal (Red)": ['#ffffff', '#fc9272', '#ef3b2c', '#a50f15', '#67000d'],
-        "No Color (Grayscale)": None 
-    }
-    selected_palette = palettes[palette_choice]
 
 # ---------------- Map Selection ----------------
 st.subheader("1. Area Selection")
@@ -138,8 +129,6 @@ if total_available > 0:
     if parameter == "Level1":
         bm = get_band_map(satellite)
         vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
-    elif selected_palette:
-        vis["palette"] = selected_palette
 
     with c1:
         st.subheader("2. Visual Review")
@@ -152,7 +141,7 @@ if total_available > 0:
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
+        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}")
 
     with c2:
         st.subheader("3. Export")
