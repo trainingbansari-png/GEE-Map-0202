@@ -169,17 +169,20 @@ if total_available > 0:
                 # Limit the collection to a smaller number of frames (optional, to avoid large requests)
                 video_col = display_collection.limit(20)  # Limit to 20 frames for testing
 
-                # Visualization with parameters
-                video_url = video_col.getVideoThumbURL({
-                    'dimensions': 720,
-                    'region': roi,  # Make sure this is correctly defined and reasonable in size
-                    'framesPerSecond': fps  # Try adjusting fps to 5 or 10
-                })
+                try:
+                    # Attempt to generate the video thumbnail without a CRS or with simplified parameters
+                    video_url = video_col.getVideoThumbURL({
+                        'dimensions': 720,               # Video dimensions
+                        'region': roi,                   # Make sure region is correctly defined
+                        'framesPerSecond': fps,          # Frames per second (adjust as needed)
+                    })
 
-                if video_url:
-                    st.image(video_url, caption=f"Timelapse: {parameter}")
-                    st.markdown(f"### [📥 Download Result]({video_url})")
-                else:
-                    st.error("Error generating video. Try reducing the number of frames or adjusting parameters.")
+                    if video_url:
+                        st.image(video_url, caption=f"Timelapse: {parameter}")
+                        st.markdown(f"### [📥 Download Result]({video_url})")
+                    else:
+                        st.error("Error generating video. Try reducing the number of frames or adjusting parameters.")
+                except Exception as e:
+                    st.error(f"Error generating timelapse: {e}")
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
