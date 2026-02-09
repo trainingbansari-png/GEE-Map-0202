@@ -138,7 +138,10 @@ if total_available > 0:
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
         st.write(f"**Frame Timestamp:** {timestamp}")
         
-        map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
+        # Ensure visualization is applied properly before getting the map ID
+        img = apply_parameter(img, parameter, satellite).clip(roi).visualize(**vis)
+        map_id = img.getMapId()
+
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}")
