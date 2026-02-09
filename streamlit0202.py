@@ -5,6 +5,7 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import pandas as pd
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -63,6 +64,31 @@ def apply_parameter(image, parameter, satellite):
             {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red']), 'BLUE': image.select(bm['blue'])}
         ).rename(parameter)
     return image
+
+def get_color_legend(parameter):
+    """Create color legend based on the selected parameter with intuitive color names"""
+    if parameter == "NDVI":
+        # Colors based on vegetation index
+        colors = ['#ffffcc', '#ffcc00', '#ff9900', '#ff6600', '#ff0000']
+        labels = ['Very Low (Light Yellow)', 'Low (Yellow)', 'Moderate (Orange)', 'High (Red)', 'Very High (Dark Red)']
+        values = ['< -0.2', '-0.2 to 0.0', '0.0 to 0.2', '0.2 to 0.5', '> 0.5']
+    elif parameter == "NDWI":
+        # Colors based on water index
+        colors = ['#ffffcc', '#66ccff', '#3399cc', '#0066cc']
+        labels = ['Very Low (Light Yellow)', 'Low Water (Light Blue)', 'Moderate Water (Blue)', 'High Water (Dark Blue)']
+        values = ['< 0.1', '0.1 to 0.2', '0.2 to 0.4', '> 0.4']
+    elif parameter == "EVI":
+        # Colors based on Enhanced Vegetation Index
+        colors = ['#f7fcf5', '#c7e9c0', '#a1d99b', '#74c476', '#31a354', '#006d2c']
+        labels = ['Very Low (Very Light Green)', 'Low (Light Green)', 'Medium (Green)', 'High (Medium Green)', 'Very High (Dark Green)']
+        values = ['< -0.3', '-0.3 to -0.1', '-0.1 to 0.2', '0.2 to 0.4', '> 0.4']
+    else:
+        # Default Vegetation color palette
+        colors = ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301']
+        labels = ['Very Low Vegetation (White)', 'Low Vegetation (Light Brown)', 'Moderate Vegetation (Yellow)', 'High Vegetation (Green)', 'Very High Vegetation (Dark Green)']
+        values = ['< 0.2', '0.2 to 0.5', '0.5 to 0.7', '> 0.7']
+
+    return colors, labels, values
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
@@ -163,5 +189,18 @@ if total_available > 0:
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
                 st.markdown(f"### [📥 Download Result]({video_url})")
+
+    # Display the color legend in a table format
+    colors, labels, values = get_color_legend(parameter)
+    color_df = pd.DataFrame({
+        "Range": values,
+        "Label": labels,
+        "Color": [f'<span style="color:{color};">{color}</span>' for color in colors]
+    })
+
+    st.subheader("📊 Color Legend")
+    st.markdown("The color ranges represent different values for the selected parameter.")
+    st.write(color_df.to_html(escape=False), unsafe_allow_html=True)
+
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
