@@ -4,7 +4,7 @@ import folium
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
-from datetime import date, datetime
+from datetime import date
 import pandas as pd
 
 # ---------------- Page Config ----------------
@@ -41,14 +41,14 @@ initialize_ee()
 def get_band_map(satellite):
     if "Sentinel" in satellite:
         return {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B8', 'swir1': 'B11'}
-    else: 
+    else:
         return {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B5', 'swir1': 'B6'}
 
 def mask_clouds(image, satellite):
     if "Sentinel" in satellite:
         qa = image.select('QA60')
         mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
-    else: 
+    else:
         qa = image.select('QA_PIXEL')
         mask = qa.bitwiseAnd(1 << 3).eq(0).And(qa.bitwiseAnd(1 << 4).eq(0))
     return image.updateMask(mask)
@@ -164,36 +164,47 @@ if total_available > 0:
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
                 st.markdown(f"### [📥 Download Result]({video_url})")
+
+    # Calculate statistics for the parameter
+    def calculate_statistics(parameter, roi, collection):
+        """Calculate statistics (mean, min, max, std) for the selected parameter."""
+
+        def process_image(image):
+            """Process each image in the collection."""
+            return image.select(parameter).reduceRegion(ee.Reducer.mean(), roi, maxPixels=5000000)
+        
+        # Reduce collection by applying the process_image to each image
+        statistics = collection.map(process_image)
+        
+        # Aggregate the results from the map operation
+        stats_list = statistics.getInfo()  # List of dictionary results for each image
+        
+        # Aggregating mean, min, max, std across all images
+        mean_values = [result['mean'] for result in stats_list if 'mean' in result]
+        min_values = [result['min'] for result in stats_list if 'min' in result]
+        max_values = [result['max'] for result in stats_list if 'max' in result]
+        std_values = [result['stdDev'] for result in stats_list if 'stdDev' in result]
+        
+        # Aggregate statistics
+        mean_stat = sum(mean_values) / len(mean_values) if mean_values else None
+        min_stat = min(min_values) if min_values else None
+        max_stat = max(max_values) if max_values else None
+        std_stat = sum(std_values) / len(std_values) if std_values else None
+
+        return {
+            "mean": mean_stat,
+            "min": min_stat,
+            "max": max_stat,
+            "std_dev": std_stat
+        }
+
+    # Call function to calculate statistics
+    stats = calculate_statistics(parameter, roi, full_collection)
+
+    # Display statistics in a table
+    stats_df = pd.DataFrame([stats])
+    st.subheader("📊 Statistics")
+    st.write(stats_df)
+
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
-
-# ---------------- Statistics Calculation ----------------
-def calculate_statistics(parameter, roi, collection):
-    """Calculate statistics (mean, min, max, std) for the selected parameter."""
-    
-    # Reduce the image collection by applying the appropriate reducer to each image
-    mean = collection.mean().select(parameter).clip(roi)
-    min_val = collection.min().select(parameter).clip(roi)
-    max_val = collection.max().select(parameter).clip(roi)
-    std_dev = collection.reduce(ee.Reducer.stdDev()).select(parameter).clip(roi)
-
-    # Fetch statistics asynchronously for smaller regions
-    mean_result = mean.reduceRegion(ee.Reducer.mean(), roi, maxPixels=5000000).getInfo()
-    min_result = min_val.reduceRegion(ee.Reducer.min(), roi, maxPixels=5000000).getInfo()
-    max_result = max_val.reduceRegion(ee.Reducer.max(), roi, maxPixels=5000000).getInfo()
-    std_dev_result = std_dev.reduceRegion(ee.Reducer.stdDev(), roi, maxPixels=5000000).getInfo()
-
-    return {
-        "mean": mean_result,
-        "min": min_result,
-        "max": max_result,
-        "std_dev": std_dev_result
-    }
-
-# Call function to calculate statistics
-stats = calculate_statistics(parameter, roi, full_collection)
-
-# Display statistics in a table
-stats_df = pd.DataFrame(stats)
-st.subheader("📊 Statistics")
-st.write(stats_df)
