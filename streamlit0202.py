@@ -6,8 +6,6 @@ from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -68,22 +66,26 @@ def apply_parameter(image, parameter, satellite):
     return image
 
 def get_color_legend(parameter):
-    """Create color legend based on the selected parameter"""
+    """Create color legend based on the selected parameter with intuitive color names"""
     if parameter == "NDVI":
+        # Colors based on vegetation index
         colors = ['#ffffcc', '#ffcc00', '#ff9900', '#ff6600', '#ff0000']
-        labels = ['Very Low', 'Low', 'Moderate', 'High', 'Very High']
+        labels = ['Very Low (Light Yellow)', 'Low (Yellow)', 'Moderate (Orange)', 'High (Red)', 'Very High (Dark Red)']
         values = ['< -0.2', '-0.2 to 0.0', '0.0 to 0.2', '0.2 to 0.5', '> 0.5']
     elif parameter == "NDWI":
+        # Colors based on water index
         colors = ['#ffffcc', '#66ccff', '#3399cc', '#0066cc']
-        labels = ['Dry', 'Low Water', 'Medium Water', 'High Water']
+        labels = ['Very Low (Light Yellow)', 'Low Water (Light Blue)', 'Moderate Water (Blue)', 'High Water (Dark Blue)']
         values = ['< 0.1', '0.1 to 0.2', '0.2 to 0.4', '> 0.4']
     elif parameter == "EVI":
+        # Colors based on Enhanced Vegetation Index
         colors = ['#f7fcf5', '#c7e9c0', '#a1d99b', '#74c476', '#31a354', '#006d2c']
-        labels = ['Very Low', 'Low', 'Medium', 'High', 'Very High']
+        labels = ['Very Low (Very Light Green)', 'Low (Light Green)', 'Medium (Green)', 'High (Medium Green)', 'Very High (Dark Green)']
         values = ['< -0.3', '-0.3 to -0.1', '-0.1 to 0.2', '0.2 to 0.4', '> 0.4']
     else:
-        colors = ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301']  # Default Vegetation
-        labels = ['Low', 'Moderate', 'High']
+        # Default Vegetation color palette
+        colors = ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301']
+        labels = ['Very Low Vegetation (White)', 'Low Vegetation (Light Brown)', 'Moderate Vegetation (Yellow)', 'High Vegetation (Green)', 'Very High Vegetation (Dark Green)']
         values = ['< 0.2', '0.2 to 0.5', '0.5 to 0.7', '> 0.7']
 
     return colors, labels, values
@@ -118,20 +120,15 @@ with st.sidebar:
 st.subheader("1. Area Selection")
 center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
 m = folium.Map(location=center, zoom_start=8)
-
-# Initialize drawing tools on the map
-draw = Draw(draw_options={"polyline": False, "polygon": False, "circle": False, "marker": False, "rectangle": True})
-draw.add_to(m)
-
-# Get map data with drawn shapes
+Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True}).add_to(m)
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
-# Store the coordinates of the drawn rectangle in session state
 if map_data and map_data["all_drawings"]:
     new_coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
     lons, lats = zip(*new_coords)
     st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
     st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
+    st.rerun()
 
 # ---------------- Main Processing ----------------
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
@@ -183,27 +180,27 @@ if total_available > 0:
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
-    # 3. Color Legend Table Display
     with c2:
-        st.subheader("4. Color Legend for Parameters")
-        colors, labels, values = get_color_legend(parameter)
-        legend_df = pd.DataFrame({
-            "Range": values,
-            "Label": labels,
-            "Color": colors
-        })
+        st.subheader("3. Export")
+        fps = st.slider("Frames Per Second", 1, 15, 5)
+        if st.button("🎬 Generate Animated Timelapse"):
+            with st.spinner("Generating..."):
+                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
+                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
+                st.image(video_url, caption=f"Timelapse: {parameter}")
+                st.markdown(f"### [📥 Download Result]({video_url})")
 
-        # Display the legend as a table
-        st.table(legend_df)
+    # Display the color legend in a table format
+    colors, labels, values = get_color_legend(parameter)
+    color_df = pd.DataFrame({
+        "Range": values,
+        "Label": labels,
+        "Color": [f'<span style="color:{color};">{color}</span>' for color in colors]
+    })
 
-    # ---------------- Export ----------------
-    st.subheader("3. Export")
-    fps = st.slider("Frames Per Second", 1, 15, 5)
-    if st.button("🎬 Generate Animated Timelapse"):
-        with st.spinner("Generating..."):
-            video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
-            video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
-            st.image(video_url, caption=f"Timelapse: {parameter}")
-            st.markdown(f"### [📥 Download Result]({video_url})")
+    st.subheader("📊 Color Legend")
+    st.markdown("The color ranges represent different values for the selected parameter.")
+    st.write(color_df.to_html(escape=False), unsafe_allow_html=True)
+
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
