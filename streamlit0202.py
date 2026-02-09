@@ -164,47 +164,5 @@ if total_available > 0:
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
                 st.markdown(f"### [📥 Download Result]({video_url})")
-
-    # Calculate statistics for the parameter
-    def calculate_statistics(parameter, roi, collection):
-        """Calculate statistics (mean, min, max, std) for the selected parameter."""
-
-        def process_image(image):
-            """Process each image in the collection."""
-            return image.select(parameter).reduceRegion(ee.Reducer.mean(), roi, maxPixels=5000000)
-        
-        # Reduce collection by applying the process_image to each image
-        statistics = collection.map(process_image)
-        
-        # Aggregating results by applying reduceRegion to each image
-        stats_list = statistics.getInfo()  # List of dictionary results for each image
-        
-        # Aggregating mean, min, max, std across all images
-        mean_values = [result['mean'] for result in stats_list if 'mean' in result]
-        min_values = [result['min'] for result in stats_list if 'min' in result]
-        max_values = [result['max'] for result in stats_list if 'max' in result]
-        std_values = [result['stdDev'] for result in stats_list if 'stdDev' in result]
-        
-        # Aggregate statistics
-        mean_stat = sum(mean_values) / len(mean_values) if mean_values else None
-        min_stat = min(min_values) if min_values else None
-        max_stat = max(max_values) if max_values else None
-        std_stat = sum(std_values) / len(std_values) if std_values else None
-
-        return {
-            "mean": mean_stat,
-            "min": min_stat,
-            "max": max_stat,
-            "std_dev": std_stat
-        }
-
-    # Call function to calculate statistics
-    stats = calculate_statistics(parameter, roi, full_collection)
-
-    # Display statistics in a table
-    stats_df = pd.DataFrame([stats])
-    st.subheader("📊 Statistics")
-    st.write(stats_df)
-
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
