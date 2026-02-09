@@ -151,11 +151,24 @@ if total_available > 0:
         
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
+        
+        # Add a click event to get parameter values
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
 
-        # Adding a marker click listener
+        # Add a click listener to fetch the parameter value for clicked point
         folium.Marker([center[0], center[1]], popup="Click to get parameter values").add_to(f_map)
-        
+
+        # Interaction with map
+        def on_map_click(event):
+            lat, lon = event.latlng
+            point = ee.Geometry.Point(lon, lat)
+            image = ee.Image(display_collection.toList(display_count).get(idx-1))
+            value = image.sample(region=point, scale=10).first().get(parameter).getInfo()
+            st.write(f"Parameter {parameter} value at clicked location: {value}")
+
+        # Map interaction - capturing the click event and extracting values
+        f_map.on('click', on_map_click)
+
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
     with c2:
