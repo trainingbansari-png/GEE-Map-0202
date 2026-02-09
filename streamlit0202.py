@@ -57,7 +57,8 @@ def apply_parameter(image, parameter, satellite):
     if parameter == "Level1": return image
     if parameter == "NDVI":
         # Calculate NDVI using NIR (B8) and RED (B4)
-        return image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
+        ndvi = image.normalizedDifference([bm['nir'], bm['red']]).rename('NDVI')
+        return ndvi
     if parameter == "NDWI": return image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
     if parameter == "MNDWI": return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
     if parameter == "EVI":
