@@ -71,6 +71,7 @@ def apply_parameter(image, parameter, satellite):
         return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)  # NDSI formula
     return image
 
+# ---------------- Get Parameter Value ----------------
 def get_parameter_value(img, parameter, roi, satellite):
     try:
         # Apply the parameter transformation (e.g., NDVI, NDSI, etc.)
@@ -80,8 +81,9 @@ def get_parameter_value(img, parameter, roi, satellite):
         param_value = param_image.select(parameter).reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=roi,
-            scale=30,  # Use the appropriate scale for your satellite imagery
-            maxPixels=1e6  # Limit the number of pixels to avoid large datasets
+            scale=30,  # Use a higher scale to reduce resolution (e.g., 30 for Sentinel, Landsat)
+            maxPixels=1e6,  # Increase the pixel limit if necessary
+            bestEffort=True  # Allow Earth Engine to use a lower resolution if needed
         )
         
         result = param_value.getInfo()  # Return the result
@@ -215,38 +217,3 @@ if total_available > 0:
                 st.markdown(f"### [📥 Download Result]({video_url})")
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
-
-# ---------------- Helper function to get color for value ----------------
-def get_color_for_value(parameter, value):
-    if parameter == "NDVI":
-        if value > 0.5:
-            return "#56B56E"  # Green (Healthy vegetation)
-        elif value > 0:
-            return "#F2E75D"  # Yellow (Moderate vegetation)
-        else:
-            return "#D37D3B"  # Brown (Bare land)
-    elif parameter == "NDWI":
-        if value > 0.3:
-            return "#1E90FF"  # Blue (Water)
-        else:
-            return "#F4A300"  # Brown (Non-water)
-    elif parameter == "MNDWI":
-        if value > 0.3:
-            return "#00BFFF"  # Light Blue (Water)
-        else:
-            return "#A0522D"  # Brown (Non-water)
-    elif parameter == "EVI":
-        if value > 0.2:
-            return "#228B22"  # Dark Green
-        elif value > 0:
-            return "#F4A300"  # Yellow
-        else:
-            return "#D37D3B"  # Brown
-    elif parameter == "NDSI":
-        if value > 0.4:
-            return "#FFFFFF"  # White (Snow)
-        elif value > 0:
-            return "#ADD8E6"  # Light Blue (Snow-like)
-        else:
-            return "#A0522D"  # Brown (Non-snow)
-    return "#ffffff"  # Default fallback
