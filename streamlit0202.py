@@ -5,7 +5,6 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
-import functools
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -158,13 +157,12 @@ if total_available > 0:
     with c2:
         st.subheader("3. Export")
         fps = st.slider("Frames Per Second", 1, 15, 5)
-        
-        # Using functools.partial to pass arguments dynamically
-        generate_timelapse_callback = functools.partial(generate_timelapse, display_collection, fps)
-        st.button("Generate Timelapse", on_click=generate_timelapse_callback)
-
-# ---------------- Timelapse Generation ----------------
-def generate_timelapse(display_collection, fps):
-    st.write("Generating Timelapse...")
-    # Add functionality here to generate video with the provided parameters
-    # Implement the code to generate and export video based on the selected parameters.
+        if st.button("🎬 Generate Animated Timelapse"):
+            with st.spinner("Generating..."):
+                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
+                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
+                st.image(video_url, caption=f"Timelapse: {parameter}")
+                st.markdown(f"### [📥 Download Result]({video_url})")
+else:
+    st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
+i want to find value of parameters
