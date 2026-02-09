@@ -4,12 +4,11 @@ import folium
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
-from datetime import date
 import pandas as pd
 
 # ---------------- Page Config ----------------
-st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
-st.title("🌍 GEE Satellite Video Generator")
+st.set_page_config(layout="wide", page_title="GEE Satellite Data Processing")
+st.title("🌍 GEE Satellite Data Viewer")
 
 # ---------------- Session State ----------------
 if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
@@ -18,7 +17,7 @@ if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
 if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
 if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
 
-# ---------------- EE Init ----------------
+# ---------------- EE Initialization ----------------
 def initialize_ee():
     try:
         ee.GetLibraryVersion()
@@ -128,13 +127,16 @@ def calculate_statistics(parameter, roi, collection):
             geometry=roi, 
             scale=30,
             maxPixels=1e8
-        ).getInfo()  # Collect stats from the server
-        stats["timestamp"] = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD").getInfo()
+        )  # This will not call .getInfo() yet
         stats_list.append(stats)
         return img_param
 
-    collection.map(process_image)
-    return stats_list
+    # Using `forEach()` to process each image asynchronously
+    collection.forEach(process_image)
+
+    # Now we can fetch the stats info outside of the map
+    results = [stat.getInfo() for stat in stats_list]
+    return results
 
 # Get stats for the collection
 stats = calculate_statistics(parameter, roi, full_collection)
@@ -146,50 +148,3 @@ if stats:
     st.write(df)
 else:
     st.write("No statistics available.")
-
-# Limit for visualization/timelapse performance
-preview_limit = 30
-display_collection = full_collection.sort("system:time_start").limit(preview_limit)
-display_count = display_collection.size().getInfo()
-
-if total_available > 0:
-    st.divider()
-    # SHOW TOTAL IMAGES FOUND
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Images in Archive", total_available)
-    m2.metric("Images in Preview", display_count)
-    m3.metric("Satellite Sensor", satellite)
-
-    c1, c2 = st.columns([1, 1])
-    
-    vis = {"min": -1, "max": 1}
-    if parameter == "Level1":
-        bm = get_band_map(satellite)
-        vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
-    elif selected_palette:
-        vis["palette"] = selected_palette
-
-    with c1:
-        st.subheader("2. Visual Review")
-        idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
-        img = ee.Image(display_collection.toList(display_count).get(idx-1))
-        
-        timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
-        st.write(f"**Frame Timestamp:** {timestamp}")
-        
-        map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
-        f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
-        folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
-
-    with c2:
-        st.subheader("3. Export")
-        fps = st.slider("Frames Per Second", 1, 15, 5)
-        if st.button("🎬 Generate Animated Timelapse"):
-            with st.spinner("Generating..."):
-                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
-                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
-                st.image(video_url, caption=f"Timelapse: {parameter}")
-                st.markdown(f"### [📥 Download Result]({video_url})")
-else:
-    st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
