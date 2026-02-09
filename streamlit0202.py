@@ -147,6 +147,9 @@ if total_available > 0:
         elif parameter == "NDVI":
             # Use a color palette for NDVI visualization (green for high NDVI, red for low)
             img = img.visualize(min=-1, max=1, palette=['#ff0000', '#ffff00', '#00ff00'])  # Red to Green for NDVI
+        else:
+            # For other parameters like NDWI, EVI, etc.
+            img = img.visualize(min=-1, max=1)
 
         try:
             # Try to get the map using the updated visualization
@@ -163,9 +166,20 @@ if total_available > 0:
         fps = st.slider("Frames Per Second", 1, 15, 5)
         if st.button("🎬 Generate Animated Timelapse"):
             with st.spinner("Generating..."):
-                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
-                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
-                st.image(video_url, caption=f"Timelapse: {parameter}")
-                st.markdown(f"### [📥 Download Result]({video_url})")
+                # Limit the collection to a smaller number of frames (optional, to avoid large requests)
+                video_col = display_collection.limit(20)  # Limit to 20 frames for testing
+
+                # Visualization with parameters
+                video_url = video_col.getVideoThumbURL({
+                    'dimensions': 720,
+                    'region': roi,  # Make sure this is correctly defined and reasonable in size
+                    'framesPerSecond': fps  # Try adjusting fps to 5 or 10
+                })
+
+                if video_url:
+                    st.image(video_url, caption=f"Timelapse: {parameter}")
+                    st.markdown(f"### [📥 Download Result]({video_url})")
+                else:
+                    st.error("Error generating video. Try reducing the number of frames or adjusting parameters.")
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
