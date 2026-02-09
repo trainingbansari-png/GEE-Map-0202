@@ -83,7 +83,7 @@ def get_color_legend(parameter):
         labels = ['Very Low (Very Light Green)', 'Low (Light Green)', 'Medium (Green)', 'High (Medium Green)', 'Very High (Dark Green)']
         values = ['< -0.3', '-0.3 to -0.1', '-0.1 to 0.2', '0.2 to 0.4', '> 0.4']
     elif parameter == "MNDWI":
-        # Colors based on Modified NDWI
+        # Colors based on Modified NDWI (Green-focused palette)
         colors = ['#ffffff', '#c7e9c0', '#74c476', '#006d2c']
         labels = ['Very Low (White)', 'Low (Light Green)', 'Moderate (Green)', 'High (Dark Green)']
         values = ['< 0.1', '0.1 to 0.2', '0.2 to 0.4', '> 0.4']
