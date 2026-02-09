@@ -144,9 +144,9 @@ if total_available > 0:
         if parameter == "Level1":
             # Use original bands for Level1 (RGB)
             img = img.visualize(bands=[bm['red'], bm['green'], bm['blue']], min=0, max=3000 if "Sentinel" in satellite else 15000)
-        else:
-            # Visualize the parameter (like NDVI)
-            img = img.visualize(min=-1, max=1)  # Adjust the min/max for the parameter
+        elif parameter == "NDVI":
+            # Use a color palette for NDVI visualization (green for high NDVI, red for low)
+            img = img.visualize(min=-1, max=1, palette=['#ff0000', '#ffff00', '#00ff00'])  # Red to Green for NDVI
 
         try:
             # Try to get the map using the updated visualization
