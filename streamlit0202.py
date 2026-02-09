@@ -52,31 +52,16 @@ def mask_clouds(image, satellite):
         mask = qa.bitwiseAnd(1 << 3).eq(0).And(qa.bitwiseAnd(1 << 4).eq(0))
     return image.updateMask(mask)
 
-def apply_parameter(image, parameter, satellite, custom_value=None):
+def apply_parameter(image, parameter, satellite):
     bm = get_band_map(satellite)
     if parameter == "Level1": return image
-    if parameter == "NDVI":
-        ndvi = image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
-        if custom_value:
-            ndvi = ndvi.updateMask(ndvi.gt(custom_value))  # Apply threshold based on custom_value
-        return ndvi
-    if parameter == "NDWI":
-        ndwi = image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
-        if custom_value:
-            ndwi = ndwi.updateMask(ndwi.gt(custom_value))  # Apply threshold based on custom_value
-        return ndwi
-    if parameter == "MNDWI":
-        mndwi = image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
-        if custom_value:
-            mndwi = mndwi.updateMask(mndwi.gt(custom_value))  # Apply threshold based on custom_value
-        return mndwi
+    if parameter == "NDVI": return image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
+    if parameter == "NDWI": return image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
+    if parameter == "MNDWI": return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
     if parameter == "EVI":
-        evi = image.expression('2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
+        return image.expression('2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
             {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red']), 'BLUE': image.select(bm['blue'])}
         ).rename(parameter)
-        if custom_value:
-            evi = evi.updateMask(evi.gt(custom_value))  # Apply threshold based on custom_value
-        return evi
     return image
 
 # ---------------- Sidebar ----------------
@@ -95,9 +80,6 @@ with st.sidebar:
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
     parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
-
-    # Allow user to input a custom value for parameter
-    custom_value = st.slider("Set Parameter Threshold", min_value=0.0, max_value=1.0, value=0.2, step=0.01)
     
     palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
     palettes = {
@@ -167,7 +149,7 @@ if total_available > 0:
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
         st.write(f"**Frame Timestamp:** {timestamp}")
         
-        map_id = apply_parameter(img, parameter, satellite, custom_value).clip(roi).getMapId(vis)
+        map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
@@ -177,7 +159,7 @@ if total_available > 0:
         fps = st.slider("Frames Per Second", 1, 15, 5)
         if st.button("🎬 Generate Animated Timelapse"):
             with st.spinner("Generating..."):
-                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite, custom_value).visualize(**vis).clip(roi))
+                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
                 st.markdown(f"### [📥 Download Result]({video_url})")
