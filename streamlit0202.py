@@ -97,6 +97,56 @@ def get_parameter_value(img, parameter, roi, satellite):
         st.error(f"Error calculating {parameter}: {e}")
         return None  # If an error occurs, return None
 
+# ---------------- Color Mapping ----------------
+def get_color_for_value(parameter, value):
+    """
+    Get color based on the parameter value for visualization purposes.
+    """
+    # Define color thresholds for different parameters (these are examples, adjust as needed)
+    if parameter == "NDVI":
+        if value < 0:
+            return "#FF0000"  # Red for non-vegetated areas
+        elif value < 0.2:
+            return "#FF8000"  # Orange for low vegetation
+        elif value < 0.5:
+            return "#FFFF00"  # Yellow for moderate vegetation
+        elif value < 0.7:
+            return "#80FF00"  # Light Green for high vegetation
+        else:
+            return "#008000"  # Dark Green for dense vegetation
+
+    elif parameter == "NDWI":
+        if value < -0.1:
+            return "#800080"  # Purple for low NDWI values (water bodies)
+        elif value < 0.3:
+            return "#00FFFF"  # Cyan for moderate water content
+        else:
+            return "#0000FF"  # Blue for high NDWI (water)
+
+    elif parameter == "EVI":
+        if value < -0.5:
+            return "#FF0000"  # Red for low EVI
+        elif value < 0:
+            return "#FF8000"  # Orange for negative EVI values
+        elif value < 0.2:
+            return "#FFFF00"  # Yellow for moderate EVI
+        elif value < 0.4:
+            return "#80FF00"  # Light Green for high EVI
+        else:
+            return "#008000"  # Dark Green for very high EVI
+
+    elif parameter == "NDSI":
+        if value < 0:
+            return "#808080"  # Gray for low snow/ice content
+        elif value < 0.2:
+            return "#0000FF"  # Blue for moderate snow/ice content
+        else:
+            return "#FFFFFF"  # White for high snow/ice content
+
+    # Default color for unknown parameters
+    return "#FFFFFF"  # White for unknown parameters
+
+
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("📍 Coordinate Editor")
@@ -166,7 +216,7 @@ if total_available > 0:
     m3.metric("Satellite Sensor", satellite)
 
     c1, c2 = st.columns([1, 1])
-    
+
     vis = {"min": -1, "max": 1}
     if parameter == "Level1":
         bm = get_band_map(satellite)
