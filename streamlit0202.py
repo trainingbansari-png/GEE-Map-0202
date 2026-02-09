@@ -82,6 +82,11 @@ def get_color_legend(parameter):
         colors = ['#f7fcf5', '#c7e9c0', '#a1d99b', '#74c476', '#31a354', '#006d2c']
         labels = ['Very Low (Very Light Green)', 'Low (Light Green)', 'Medium (Green)', 'High (Medium Green)', 'Very High (Dark Green)']
         values = ['< -0.3', '-0.3 to -0.1', '-0.1 to 0.2', '0.2 to 0.4', '> 0.4']
+    elif parameter == "MNDWI":
+        # Colors based on Modified NDWI
+        colors = ['#ffffff', '#c7e9c0', '#74c476', '#006d2c']
+        labels = ['Very Low (White)', 'Low (Light Green)', 'Moderate (Green)', 'High (Dark Green)']
+        values = ['< 0.1', '0.1 to 0.2', '0.2 to 0.4', '> 0.4']
     else:
         # Default Vegetation color palette
         colors = ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301']
