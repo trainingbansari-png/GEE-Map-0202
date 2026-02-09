@@ -94,23 +94,8 @@ with st.sidebar:
 st.subheader("1. Area Selection")
 center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
 m = folium.Map(location=center, zoom_start=8)
-Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":True,"rectangle":False}).add_to(m)
+Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True}).add_to(m)
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
-
-if map_data and map_data.get("last_clicked"):
-    clicked_lat, clicked_lon = map_data["last_clicked"]["latlng"]
-    st.write(f"Clicked Location: Latitude = {clicked_lat}, Longitude = {clicked_lon}")
-    
-    # Define the point where the user clicked
-    point = ee.Geometry.Point(clicked_lon, clicked_lat)
-    
-    # Retrieve the image at the clicked location
-    img = ee.Image(display_collection.toList(display_count).get(st.session_state.frame_idx-1))
-    
-    # Get the parameter value at that point
-    value = img.sample(region=point, scale=10).first().get(parameter).getInfo()
-    
-    st.write(f"Parameter {parameter} value at clicked location: {value}")
 
 # ---------------- Main Processing ----------------
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
@@ -163,7 +148,21 @@ if total_available > 0:
         # Add the layer for the satellite image visualization
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
 
-        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
+        # Show map and get clicked coordinates
+        map_data = st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
+
+        # Handle user clicking on the map
+        if map_data and map_data.get("last_clicked"):
+            clicked_lat, clicked_lon = map_data["last_clicked"]["latlng"]
+            st.write(f"Clicked Location: Latitude = {clicked_lat}, Longitude = {clicked_lon}")
+            
+            # Define the point where the user clicked
+            point = ee.Geometry.Point(clicked_lon, clicked_lat)
+            
+            # Retrieve the image at the clicked location
+            value = img.sample(region=point, scale=10).first().get(parameter).getInfo()
+            
+            st.write(f"Parameter {parameter} value at clicked location: {value}")
 
     with c2:
         st.subheader("3. Export")
