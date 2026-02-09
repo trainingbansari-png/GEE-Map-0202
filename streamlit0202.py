@@ -165,4 +165,3 @@ if total_available > 0:
                 st.markdown(f"### [📥 Download Result]({video_url})")
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
-i want to show the value of parameters
