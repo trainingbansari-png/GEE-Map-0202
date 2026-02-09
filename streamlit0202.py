@@ -67,6 +67,25 @@ def apply_parameter(image, parameter, satellite):
         return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)  # NDSI formula
     return image
 
+def get_parameter_value(img, parameter, roi, satellite):
+    try:
+        # Apply the parameter transformation (e.g., NDVI, NDSI, etc.)
+        param_image = apply_parameter(img, parameter, satellite)
+        
+        # Use reduceRegion for a smaller area (scale 30, and maxPixels limit)
+        param_value = param_image.select(parameter).reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=roi,
+            scale=30,  # Use the appropriate scale for your satellite imagery
+            maxPixels=1e6  # Limit the number of pixels to avoid large datasets
+        )
+        
+        return param_value.getInfo()  # Return the result
+        
+    except Exception as e:
+        st.error(f"Error calculating {parameter}: {e}")
+        return None  # If an error occurs, return None
+
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("📍 Coordinate Editor")
@@ -152,24 +171,21 @@ if total_available > 0:
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
         st.write(f"**Frame Timestamp:** {timestamp}")
         
-        # Show the selected parameter value for the current frame
-        param_image = apply_parameter(img, parameter, satellite)
-        param_value = param_image.select(parameter).reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=roi,
-            scale=30,  # Adjust scale as per your dataset
-            maxPixels=1e8
-        ).getInfo()
+        # Get parameter value for the current image frame
+        param_value = get_parameter_value(img, parameter, roi, satellite)
         
-        st.write(f"**{parameter} Value:** {param_value.get(parameter):.4f}")
+        if param_value:
+            st.write(f"**{parameter} Value:** {param_value.get(parameter):.4f}")
+        else:
+            st.warning("Unable to compute parameter value for this frame.")
         
         # Display color panel based on value
-        value = param_value.get(parameter)
+        value = param_value.get(parameter) if param_value else 0
         color = get_color_for_value(parameter, value)
         
         st.markdown(f"<div style='background-color:{color}; padding:10px; width:100%; color:white;'>Value: {value:.4f}</div>", unsafe_allow_html=True)
 
-        map_id = param_image.clip(roi).getMapId(vis)
+        map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
@@ -220,4 +236,3 @@ def get_color_for_value(parameter, value):
         else:
             return "#A0522D"  # Brown (Non-snow)
     return "#ffffff"  # Default fallback
-
