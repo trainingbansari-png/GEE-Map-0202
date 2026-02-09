@@ -1,9 +1,21 @@
 import streamlit as st
 import ee
-from datetime import date
-import base64
-from PIL import Image
-import io
+import folium
+from folium.plugins import Draw
+from streamlit_folium import st_folium
+from google.oauth2 import service_account
+from datetime import date, datetime
+
+# ---------------- Page Config ----------------
+st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
+st.title("🌍 GEE Satellite Video Generator")
+
+# ---------------- Session State ----------------
+if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
+if "ul_lon" not in st.session_state: st.session_state.ul_lon = 69.5
+if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
+if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
+if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -12,16 +24,15 @@ def initialize_ee():
     except Exception:
         try:
             if "GCP_SERVICE_ACCOUNT_JSON" in st.secrets:
-                from google.oauth2 import service_account
                 service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
                 credentials = service_account.Credentials.from_service_account_info(
                     service_account_info,
                     scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
                 )
                 ee.Initialize(credentials)
-                st.success("Earth Engine Initialized")
+                st.sidebar.success("Earth Engine Initialized")
         except Exception as e:
-            st.error(f"EE Init Error: {e}")
+            st.sidebar.error(f"EE Init Error: {e}")
 
 initialize_ee()
 
@@ -29,7 +40,7 @@ initialize_ee()
 def get_band_map(satellite):
     if "Sentinel" in satellite:
         return {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B8', 'swir1': 'B11'}
-    else:
+    else: 
         return {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B5', 'swir1': 'B6'}
 
 def mask_clouds(image, satellite):
@@ -53,80 +64,104 @@ def apply_parameter(image, parameter, satellite):
         ).rename(parameter)
     return image
 
-def get_parameter_value(image, parameter, satellite, roi):
-    """Return mean value of parameter in ROI"""
-    param_image = apply_parameter(image, parameter, satellite)
-    value = param_image.reduceRegion(ee.Reducer.mean(), roi, 30).get(parameter if parameter != "Level1" else "B4").getInfo()
-    return value
-
-def image_to_base64(image):
-    """Convert an image to base64 format."""
-    buffered = io.BytesIO()
-    image.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode("utf-8")
-
 # ---------------- Sidebar ----------------
-st.sidebar.header("Configuration")
-start_date = st.sidebar.date_input("Start Date", date(2024, 1, 1))
-end_date = st.sidebar.date_input("End Date", date(2024, 12, 31))
-satellite = st.sidebar.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
-parameter = st.sidebar.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
-
-# ---------------- ROI ----------------
-st.sidebar.header("ROI Coordinates")
-ul_lat = st.sidebar.number_input("Upper Lat", 22.5)
-ul_lon = st.sidebar.number_input("Left Lon", 69.5)
-lr_lat = st.sidebar.number_input("Lower Lat", 21.5)
-lr_lon = st.sidebar.number_input("Right Lon", 70.5)
-roi = ee.Geometry.Rectangle([ul_lon, lr_lat, lr_lon, ul_lat])
-
-# ---------------- Image Collection ----------------
-col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED",
-          "Landsat-8": "LANDSAT/LC08/C02/T1_L2",
-          "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
-
-collection = (ee.ImageCollection(col_id)
-              .filterBounds(roi)
-              .filterDate(str(start_date), str(end_date))
-              .map(lambda img: mask_clouds(img, satellite))
-              .sort("system:time_start"))
-
-total_images = collection.size().getInfo()
-st.write(f"Total images available: {total_images}")
-
-if total_images > 0:
-    # Get the list of image URLs for the thumbnails
-    image_urls = []
-    image_list = collection.toList(total_images)
+with st.sidebar:
+    st.header("📍 Coordinate Editor")
+    u_lat = st.number_input("Upper Lat", value=float(st.session_state.ul_lat), format="%.4f")
+    u_lon = st.number_input("Left Lon", value=float(st.session_state.ul_lon), format="%.4f")
+    l_lat = st.number_input("Lower Lat", value=float(st.session_state.lr_lat), format="%.4f")
+    l_lon = st.number_input("Right Lon", value=float(st.session_state.lr_lon), format="%.4f")
     
-    # Generate thumbnails for each image in the collection
-    for i in range(min(total_images, 30)):  # Limit to first 30 images for display
-        img = ee.Image(image_list.get(i))
-        timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD").getInfo()
+    st.session_state.ul_lat, st.session_state.ul_lon = u_lat, u_lon
+    st.session_state.lr_lat, st.session_state.lr_lon = l_lat, l_lon
 
-        try:
-            # Specify only the RGB bands (B4, B3, B2 for Sentinel-2 or similar for Landsat)
-            rgb_bands = img.select(['B4', 'B3', 'B2'])  # Update with correct RGB bands
-            thumb = rgb_bands.getThumbURL({'dimensions': 60, 'region': roi, 'format': 'png'})
-            image_urls.append((thumb, timestamp))
-        except Exception as e:
-            st.warning(f"Error generating thumbnail for image {i+1}: {str(e)}")
-            continue
+    st.header("📅 Configuration")
+    start_date = st.date_input("Start Date", date(2024, 1, 1))
+    end_date = st.date_input("End Date", date(2024, 12, 31))
+    satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
+    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
     
-    # Display thumbnails as clickable images
-    selected_frame = None
-    for idx, (thumb_url, timestamp) in enumerate(image_urls):
-        if st.button(f"Image {idx+1} - {timestamp}", key=f"image_{idx}"):
-            selected_frame = idx
-            st.session_state.selected_frame = selected_frame
+    palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
+    palettes = {
+        "Vegetation (Green)": ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301'],
+        "Water (Blue)": ['#ffffd9', '#7fcdbb', '#41b6c4', '#1d91c0', '#0c2c84'],
+        "Thermal (Red)": ['#ffffff', '#fc9272', '#ef3b2c', '#a50f15', '#67000d'],
+        "No Color (Grayscale)": None 
+    }
+    selected_palette = palettes[palette_choice]
+
+# ---------------- Map Selection ----------------
+st.subheader("1. Area Selection")
+center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
+m = folium.Map(location=center, zoom_start=8)
+Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True}).add_to(m)
+map_data = st_folium(m, height=350, width="100%", key="roi_map")
+
+if map_data and map_data["all_drawings"]:
+    new_coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
+    lons, lats = zip(*new_coords)
+    st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
+    st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
+    st.rerun()
+
+# ---------------- Main Processing ----------------
+roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
+                             st.session_state.lr_lon, st.session_state.ul_lat])
+
+col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
+
+# Build the initial collection
+full_collection = (ee.ImageCollection(col_id)
+                  .filterBounds(roi)
+                  .filterDate(str(start_date), str(end_date))
+                  .map(lambda img: mask_clouds(img, satellite)))
+
+# Get total count available in Earth Engine
+total_available = full_collection.size().getInfo()
+
+# Limit for visualization/timelapse performance
+preview_limit = 30
+display_collection = full_collection.sort("system:time_start").limit(preview_limit)
+display_count = display_collection.size().getInfo()
+
+if total_available > 0:
+    st.divider()
+    # SHOW TOTAL IMAGES FOUND
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Images in Archive", total_available)
+    m2.metric("Images in Preview", display_count)
+    m3.metric("Satellite Sensor", satellite)
+
+    c1, c2 = st.columns([1, 1])
     
-    # Show the parameter value for the clicked frame
-    if selected_frame is not None:
-        # Get the selected image
-        selected_image = ee.Image(image_list.get(selected_frame))
-        parameter_value = get_parameter_value(selected_image, parameter, satellite, roi)
-        st.write(f"**Selected Frame Timestamp:** {image_urls[selected_frame][1]}")
-        st.write(f"**{parameter} Value in ROI:** {parameter_value}")
-    
+    vis = {"min": -1, "max": 1}
+    if parameter == "Level1":
+        bm = get_band_map(satellite)
+        vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
+    elif selected_palette:
+        vis["palette"] = selected_palette
+
+    with c1:
+        st.subheader("2. Visual Review")
+        idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
+        img = ee.Image(display_collection.toList(display_count).get(idx-1))
+        
+        timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
+        st.write(f"**Frame Timestamp:** {timestamp}")
+        
+        map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
+        f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
+        folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
+        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
+
+    with c2:
+        st.subheader("3. Export")
+        fps = st.slider("Frames Per Second", 1, 15, 5)
+        if st.button("🎬 Generate Animated Timelapse"):
+            with st.spinner("Generating..."):
+                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
+                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
+                st.image(video_url, caption=f"Timelapse: {parameter}")
+                st.markdown(f"### [📥 Download Result]({video_url})")
 else:
-    st.warning("No images available for this ROI/date range.")
+    st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
