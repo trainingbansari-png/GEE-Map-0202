@@ -117,8 +117,35 @@ full_collection = (ee.ImageCollection(col_id)
                   .filterDate(str(start_date), str(end_date))
                   .map(lambda img: mask_clouds(img, satellite)))
 
-# Get total count available in Earth Engine
-total_available = full_collection.size().getInfo()
+# Function to calculate statistics per image
+def calculate_statistics(parameter, roi, collection):
+    stats_list = []
+    def process_image(img):
+        img_param = apply_parameter(img, parameter, satellite)
+        # Calculate statistics for each image
+        stats = img_param.reduceRegion(
+            reducer=ee.Reducer.mean(), 
+            geometry=roi, 
+            scale=30,
+            maxPixels=1e8
+        ).getInfo()  # Collect stats from the server
+        stats["timestamp"] = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD").getInfo()
+        stats_list.append(stats)
+        return img_param
+
+    collection.map(process_image)
+    return stats_list
+
+# Get stats for the collection
+stats = calculate_statistics(parameter, roi, full_collection)
+
+# Display stats in a table
+if stats:
+    df = pd.DataFrame(stats)
+    st.subheader("📊 Statistics Summary")
+    st.write(df)
+else:
+    st.write("No statistics available.")
 
 # Limit for visualization/timelapse performance
 preview_limit = 30
