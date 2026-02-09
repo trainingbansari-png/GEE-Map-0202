@@ -170,7 +170,18 @@ if total_available > 0:
                 video_col = display_collection.limit(20)  # Limit to 20 frames for testing
 
                 try:
-                    # Attempt to generate the video thumbnail without a CRS or with simplified parameters
+                    # Select only 3 bands (for RGB) or 1 band (for NDVI, etc.)
+                    if parameter == "Level1":
+                        # Select RGB bands for Level1 visualization
+                        video_col = video_col.map(lambda img: img.select([bm['red'], bm['green'], bm['blue']]))
+                    elif parameter == "NDVI":
+                        # Select only the NDVI band for NDVI visualization
+                        video_col = video_col.map(lambda img: img.select("NDVI"))
+                    else:
+                        # For other parameters (e.g., NDWI, EVI), select the first available band
+                        video_col = video_col.map(lambda img: img.select([bm['red'], bm['green'], bm['blue']]))
+
+                    # Generate video with selected bands
                     video_url = video_col.getVideoThumbURL({
                         'dimensions': 720,               # Video dimensions
                         'region': roi,                   # Make sure region is correctly defined
