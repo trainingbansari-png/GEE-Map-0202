@@ -4,11 +4,12 @@ import folium
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
+from datetime import date  # Correct import for date
 import pandas as pd
 
 # ---------------- Page Config ----------------
-st.set_page_config(layout="wide", page_title="GEE Satellite Data Processing")
-st.title("🌍 GEE Satellite Data Viewer")
+st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
+st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State ----------------
 if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
@@ -17,7 +18,7 @@ if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
 if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
 if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
 
-# ---------------- EE Initialization ----------------
+# ---------------- EE Init ----------------
 def initialize_ee():
     try:
         ee.GetLibraryVersion()
@@ -40,14 +41,14 @@ initialize_ee()
 def get_band_map(satellite):
     if "Sentinel" in satellite:
         return {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B8', 'swir1': 'B11'}
-    else:
+    else: 
         return {'red': 'B4', 'green': 'B3', 'blue': 'B2', 'nir': 'B5', 'swir1': 'B6'}
 
 def mask_clouds(image, satellite):
     if "Sentinel" in satellite:
         qa = image.select('QA60')
         mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
-    else:
+    else: 
         qa = image.select('QA_PIXEL')
         mask = qa.bitwiseAnd(1 << 3).eq(0).And(qa.bitwiseAnd(1 << 4).eq(0))
     return image.updateMask(mask)
@@ -76,7 +77,7 @@ with st.sidebar:
     st.session_state.lr_lat, st.session_state.lr_lon = l_lat, l_lon
 
     st.header("📅 Configuration")
-    start_date = st.date_input("Start Date", date(2024, 1, 1))
+    start_date = st.date_input("Start Date", date(2024, 1, 1))  # Corrected date import here
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
     parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
@@ -116,35 +117,50 @@ full_collection = (ee.ImageCollection(col_id)
                   .filterDate(str(start_date), str(end_date))
                   .map(lambda img: mask_clouds(img, satellite)))
 
-# Function to calculate statistics per image
-def calculate_statistics(parameter, roi, collection):
-    stats_list = []
-    def process_image(img):
-        img_param = apply_parameter(img, parameter, satellite)
-        # Calculate statistics for each image
-        stats = img_param.reduceRegion(
-            reducer=ee.Reducer.mean(), 
-            geometry=roi, 
-            scale=30,
-            maxPixels=1e8
-        )  # This will not call .getInfo() yet
-        stats_list.append(stats)
-        return img_param
+# Get total count available in Earth Engine
+total_available = full_collection.size().getInfo()
 
-    # Using `forEach()` to process each image asynchronously
-    collection.forEach(process_image)
+# Limit for visualization/timelapse performance
+preview_limit = 30
+display_collection = full_collection.sort("system:time_start").limit(preview_limit)
+display_count = display_collection.size().getInfo()
 
-    # Now we can fetch the stats info outside of the map
-    results = [stat.getInfo() for stat in stats_list]
-    return results
+if total_available > 0:
+    st.divider()
+    # SHOW TOTAL IMAGES FOUND
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Images in Archive", total_available)
+    m2.metric("Images in Preview", display_count)
+    m3.metric("Satellite Sensor", satellite)
 
-# Get stats for the collection
-stats = calculate_statistics(parameter, roi, full_collection)
+    c1, c2 = st.columns([1, 1])
+    
+    vis = {"min": -1, "max": 1}
+    if parameter == "Level1":
+        bm = get_band_map(satellite)
+        vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
+    elif selected_palette:
+        vis["palette"] = selected_palette
 
-# Display stats in a table
-if stats:
-    df = pd.DataFrame(stats)
-    st.subheader("📊 Statistics Summary")
-    st.write(df)
-else:
-    st.write("No statistics available.")
+    with c1:
+        st.subheader("2. Visual Review")
+        idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
+        img = ee.Image(display_collection.toList(display_count).get(idx-1))
+        
+        timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
+        st.write(f"**Frame Timestamp:** {timestamp}")
+        
+        map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
+        f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
+        folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
+        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
+
+    with c2:
+        st.subheader("3. Export")
+        fps = st.slider("Frames Per Second", 1, 15, 5)
+        st.button("Generate Timelapse", on_click=generate_timelapse, args=(display_collection, fps))
+
+# ---------------- Function to Generate Timelapse ----------------
+def generate_timelapse(display_collection, fps):
+    st.write("Generating Timelapse...")
+    # Function to generate video can be added here.
