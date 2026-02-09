@@ -176,7 +176,7 @@ if total_available > 0:
         # Reduce collection by applying the process_image to each image
         statistics = collection.map(process_image)
         
-        # Aggregate the results from the map operation
+        # Aggregating results by applying reduceRegion to each image
         stats_list = statistics.getInfo()  # List of dictionary results for each image
         
         # Aggregating mean, min, max, std across all images
