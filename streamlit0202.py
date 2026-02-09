@@ -94,7 +94,10 @@ with st.sidebar:
 st.subheader("1. Area Selection")
 center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
 m = folium.Map(location=center, zoom_start=8)
-Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True}).add_to(m)
+draw = Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True})
+draw.add_to(m)
+
+# Get the coordinates from the drawn rectangle and update the session state
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
 if map_data and map_data["all_drawings"]:
@@ -102,7 +105,7 @@ if map_data and map_data["all_drawings"]:
     lons, lats = zip(*new_coords)
     st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
     st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
-    st.rerun()
+    st.rerun()  # Re-run the app to update the map and session state
 
 # ---------------- Main Processing ----------------
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
