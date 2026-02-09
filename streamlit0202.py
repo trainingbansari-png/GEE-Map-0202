@@ -5,6 +5,7 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import numpy as np
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -62,6 +63,8 @@ def apply_parameter(image, parameter, satellite):
         return image.expression('2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
             {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red']), 'BLUE': image.select(bm['blue'])}
         ).rename(parameter)
+    if parameter == "NDSI":
+        return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)  # NDSI formula
     return image
 
 # ---------------- Sidebar ----------------
@@ -79,7 +82,7 @@ with st.sidebar:
     start_date = st.date_input("Start Date", date(2024, 1, 1))
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
-    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
+    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI", "NDSI"])  # Added NDSI
     
     palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
     palettes = {
@@ -160,6 +163,12 @@ if total_available > 0:
         
         st.write(f"**{parameter} Value:** {param_value.get(parameter):.4f}")
         
+        # Display color panel based on value
+        value = param_value.get(parameter)
+        color = get_color_for_value(parameter, value)
+        
+        st.markdown(f"<div style='background-color:{color}; padding:10px; width:100%; color:white;'>Value: {value:.4f}</div>", unsafe_allow_html=True)
+
         map_id = param_image.clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
@@ -176,3 +185,39 @@ if total_available > 0:
                 st.markdown(f"### [📥 Download Result]({video_url})")
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
+
+# ---------------- Helper function to get color for value ----------------
+def get_color_for_value(parameter, value):
+    if parameter == "NDVI":
+        if value > 0.5:
+            return "#56B56E"  # Green (Healthy vegetation)
+        elif value > 0:
+            return "#F2E75D"  # Yellow (Moderate vegetation)
+        else:
+            return "#D37D3B"  # Brown (Bare land)
+    elif parameter == "NDWI":
+        if value > 0.3:
+            return "#1E90FF"  # Blue (Water)
+        else:
+            return "#F4A300"  # Brown (Non-water)
+    elif parameter == "MNDWI":
+        if value > 0.3:
+            return "#00BFFF"  # Light Blue (Water)
+        else:
+            return "#A0522D"  # Brown (Non-water)
+    elif parameter == "EVI":
+        if value > 0.2:
+            return "#228B22"  # Dark Green
+        elif value > 0:
+            return "#F4A300"  # Yellow
+        else:
+            return "#D37D3B"  # Brown
+    elif parameter == "NDSI":
+        if value > 0.4:
+            return "#FFFFFF"  # White (Snow)
+        elif value > 0:
+            return "#ADD8E6"  # Light Blue (Snow-like)
+        else:
+            return "#A0522D"  # Brown (Non-snow)
+    return "#ffffff"  # Default fallback
+
