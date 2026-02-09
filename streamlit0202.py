@@ -4,8 +4,8 @@ import folium
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
-from datetime import date  # Correct import for date
-import pandas as pd
+from datetime import date, datetime
+import functools
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -77,7 +77,7 @@ with st.sidebar:
     st.session_state.lr_lat, st.session_state.lr_lon = l_lat, l_lon
 
     st.header("📅 Configuration")
-    start_date = st.date_input("Start Date", date(2024, 1, 1))  # Corrected date import here
+    start_date = st.date_input("Start Date", date(2024, 1, 1))
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
     parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
@@ -158,9 +158,13 @@ if total_available > 0:
     with c2:
         st.subheader("3. Export")
         fps = st.slider("Frames Per Second", 1, 15, 5)
-        st.button("Generate Timelapse", on_click=generate_timelapse, args=(display_collection, fps))
+        
+        # Using functools.partial to pass arguments dynamically
+        generate_timelapse_callback = functools.partial(generate_timelapse, display_collection, fps)
+        st.button("Generate Timelapse", on_click=generate_timelapse_callback)
 
-# ---------------- Function to Generate Timelapse ----------------
+# ---------------- Timelapse Generation ----------------
 def generate_timelapse(display_collection, fps):
     st.write("Generating Timelapse...")
-    # Function to generate video can be added here.
+    # Add functionality here to generate video with the provided parameters
+    # Implement the code to generate and export video based on the selected parameters.
