@@ -5,8 +5,9 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
-import matplotlib.pyplot as plt
+import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -71,17 +72,21 @@ def get_color_legend(parameter):
     if parameter == "NDVI":
         colors = ['#ffffcc', '#ffcc00', '#ff9900', '#ff6600', '#ff0000']
         labels = ['Very Low', 'Low', 'Moderate', 'High', 'Very High']
+        values = ['< -0.2', '-0.2 to 0.0', '0.0 to 0.2', '0.2 to 0.5', '> 0.5']
     elif parameter == "NDWI":
         colors = ['#ffffcc', '#66ccff', '#3399cc', '#0066cc']
         labels = ['Dry', 'Low Water', 'Medium Water', 'High Water']
+        values = ['< 0.1', '0.1 to 0.2', '0.2 to 0.4', '> 0.4']
     elif parameter == "EVI":
         colors = ['#f7fcf5', '#c7e9c0', '#a1d99b', '#74c476', '#31a354', '#006d2c']
         labels = ['Very Low', 'Low', 'Medium', 'High', 'Very High']
+        values = ['< -0.3', '-0.3 to -0.1', '-0.1 to 0.2', '0.2 to 0.4', '> 0.4']
     else:
         colors = ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301']  # Default Vegetation
         labels = ['Low', 'Moderate', 'High']
+        values = ['< 0.2', '0.2 to 0.5', '0.5 to 0.7', '> 0.7']
 
-    return colors, labels
+    return colors, labels, values
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
@@ -165,17 +170,6 @@ if total_available > 0:
     elif selected_palette:
         vis["palette"] = selected_palette
 
-    # Generate color legend based on selected parameter
-    colors, labels = get_color_legend(parameter)
-    st.subheader("Color Legend")
-    legend_fig, legend_ax = plt.subplots(figsize=(6, 1))
-    gradient = np.linspace(0, 1, len(colors))
-    legend_ax.imshow([gradient], aspect='auto', cmap=plt.cm.RdYlGn)
-    legend_ax.set_xticks(np.linspace(0, 1, len(labels)))
-    legend_ax.set_xticklabels(labels)
-    legend_ax.set_yticks([])
-    st.pyplot(legend_fig)
-
     with c1:
         st.subheader("2. Visual Review")
         idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
@@ -189,14 +183,27 @@ if total_available > 0:
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
+    # 3. Color Legend Table Display
     with c2:
-        st.subheader("3. Export")
-        fps = st.slider("Frames Per Second", 1, 15, 5)
-        if st.button("🎬 Generate Animated Timelapse"):
-            with st.spinner("Generating..."):
-                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
-                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
-                st.image(video_url, caption=f"Timelapse: {parameter}")
-                st.markdown(f"### [📥 Download Result]({video_url})")
+        st.subheader("4. Color Legend for Parameters")
+        colors, labels, values = get_color_legend(parameter)
+        legend_df = pd.DataFrame({
+            "Range": values,
+            "Label": labels,
+            "Color": colors
+        })
+
+        # Display the legend as a table
+        st.table(legend_df)
+
+    # ---------------- Export ----------------
+    st.subheader("3. Export")
+    fps = st.slider("Frames Per Second", 1, 15, 5)
+    if st.button("🎬 Generate Animated Timelapse"):
+        with st.spinner("Generating..."):
+            video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
+            video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
+            st.image(video_url, caption=f"Timelapse: {parameter}")
+            st.markdown(f"### [📥 Download Result]({video_url})")
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
