@@ -5,7 +5,6 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
-import numpy as np
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -17,7 +16,6 @@ if "ul_lon" not in st.session_state: st.session_state.ul_lon = 69.5
 if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
 if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
 if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
-if "clicked_value" not in st.session_state: st.session_state.clicked_value = None
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -56,97 +54,15 @@ def mask_clouds(image, satellite):
 
 def apply_parameter(image, parameter, satellite):
     bm = get_band_map(satellite)
-    if parameter == "Level1":
-        return image  # Return the raw image without any parameter transformation
-    if parameter == "NDVI":
-        return image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
-    if parameter == "NDWI":
-        return image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
-    if parameter == "MNDWI":
-        return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
+    if parameter == "Level1": return image
+    if parameter == "NDVI": return image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
+    if parameter == "NDWI": return image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
+    if parameter == "MNDWI": return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
     if parameter == "EVI":
         return image.expression('2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
             {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red']), 'BLUE': image.select(bm['blue'])}
         ).rename(parameter)
-    if parameter == "NDSI":
-        return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)  # NDSI formula
     return image
-
-# ---------------- Get Parameter Value ----------------
-def get_parameter_value(img, parameter, roi, satellite):
-    try:
-        # Apply the parameter transformation (e.g., NDVI, NDSI, etc.)
-        param_image = apply_parameter(img, parameter, satellite)
-        
-        # Use reduceRegion for a smaller area (scale 30, and maxPixels limit)
-        param_value = param_image.select(parameter).reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=roi,
-            scale=30,  # Use a higher scale to reduce resolution (e.g., 30 for Sentinel, Landsat)
-            maxPixels=1e6,  # Increase the pixel limit if necessary
-            bestEffort=True  # Allow Earth Engine to use a lower resolution if needed
-        )
-        
-        result = param_value.getInfo()  # Return the result
-        if result and parameter in result:
-            return result
-        else:
-            st.warning(f"Unable to compute {parameter} value for this region.")
-            return None  # If an error occurs or no value, return None
-        
-    except Exception as e:
-        st.error(f"Error calculating {parameter}: {e}")
-        return None  # If an error occurs, return None
-
-# ---------------- Color Mapping ----------------
-def get_color_for_value(parameter, value):
-    """
-    Get color based on the parameter value for visualization purposes.
-    """
-    # Define color thresholds for different parameters (these are examples, adjust as needed)
-    if parameter == "NDVI":
-        if value < 0:
-            return "#FF0000"  # Red for non-vegetated areas
-        elif value < 0.2:
-            return "#FF8000"  # Orange for low vegetation
-        elif value < 0.5:
-            return "#FFFF00"  # Yellow for moderate vegetation
-        elif value < 0.7:
-            return "#80FF00"  # Light Green for high vegetation
-        else:
-            return "#008000"  # Dark Green for dense vegetation
-
-    elif parameter == "NDWI":
-        if value < -0.1:
-            return "#800080"  # Purple for low NDWI values (water bodies)
-        elif value < 0.3:
-            return "#00FFFF"  # Cyan for moderate water content
-        else:
-            return "#0000FF"  # Blue for high NDWI (water)
-
-    elif parameter == "EVI":
-        if value < -0.5:
-            return "#FF0000"  # Red for low EVI
-        elif value < 0:
-            return "#FF8000"  # Orange for negative EVI values
-        elif value < 0.2:
-            return "#FFFF00"  # Yellow for moderate EVI
-        elif value < 0.4:
-            return "#80FF00"  # Light Green for high EVI
-        else:
-            return "#008000"  # Dark Green for very high EVI
-
-    elif parameter == "NDSI":
-        if value < 0:
-            return "#808080"  # Gray for low snow/ice content
-        elif value < 0.2:
-            return "#0000FF"  # Blue for moderate snow/ice content
-        else:
-            return "#FFFFFF"  # White for high snow/ice content
-
-    # Default color for unknown parameters
-    return "#FFFFFF"  # White for unknown parameters
-
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
@@ -163,7 +79,7 @@ with st.sidebar:
     start_date = st.date_input("Start Date", date(2024, 1, 1))
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
-    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI", "NDSI"])  # Added NDSI
+    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
     
     palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
     palettes = {
@@ -217,7 +133,7 @@ if total_available > 0:
     m3.metric("Satellite Sensor", satellite)
 
     c1, c2 = st.columns([1, 1])
-
+    
     vis = {"min": -1, "max": 1}
     if parameter == "Level1":
         bm = get_band_map(satellite)
@@ -233,35 +149,9 @@ if total_available > 0:
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
         st.write(f"**Frame Timestamp:** {timestamp}")
         
-        # Get parameter value for the current image frame
-        param_value = get_parameter_value(img, parameter, roi, satellite)
-        
-        if param_value:
-            value = param_value.get(parameter)  # Get the actual value for the selected parameter
-            st.write(f"**{parameter} Value:** {value:.4f}")
-            st.write(f"**Parameter Debug**: {parameter}, Value: {value}")
-        else:
-            value = None  # If value is None, handle accordingly
-            st.warning("Unable to compute parameter value for this frame.")
-        
-        # Ensure that value is a valid numeric value
-        if value is not None and isinstance(value, (int, float)):
-            # Display color panel based on value (only if value is valid)
-            try:
-                color = get_color_for_value(parameter, value)
-                st.markdown(f"<div style='background-color:{color}; padding:10px; width:100%; color:white;'>Value: {value:.4f}</div>", unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Error displaying color panel: {e}")
-        else:
-            st.warning("No valid value to display color panel.")
-
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-        
-        # Handle click event and get clicked value
-        f_map.on_click(lambda e: st.session_state.clicked_value)
-
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
     with c2:
@@ -275,3 +165,4 @@ if total_available > 0:
                 st.markdown(f"### [📥 Download Result]({video_url})")
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
+i want to show the value of parameters
