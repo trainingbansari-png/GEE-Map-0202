@@ -11,16 +11,16 @@ st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State Initialization ----------------
-# Ensure that the session state values are initialized correctly
-if "ul_lat" not in st.session_state:
+# Initialize default values if they are not already in the session state
+if "ul_lat" not in st.session_state or not isinstance(st.session_state.ul_lat, (int, float)):
     st.session_state.ul_lat = 22.5  # default value for upper-left latitude
-if "ul_lon" not in st.session_state:
+if "ul_lon" not in st.session_state or not isinstance(st.session_state.ul_lon, (int, float)):
     st.session_state.ul_lon = 69.5  # default value for upper-left longitude
-if "lr_lat" not in st.session_state:
+if "lr_lat" not in st.session_state or not isinstance(st.session_state.lr_lat, (int, float)):
     st.session_state.lr_lat = 21.5  # default value for lower-right latitude
-if "lr_lon" not in st.session_state:
+if "lr_lon" not in st.session_state or not isinstance(st.session_state.lr_lon, (int, float)):
     st.session_state.lr_lon = 70.5  # default value for lower-right longitude
-if "frame_idx" not in st.session_state:
+if "frame_idx" not in st.session_state or not isinstance(st.session_state.frame_idx, int):
     st.session_state.frame_idx = 1  # default frame index
 
 # ---------------- EE Init ----------------
@@ -73,6 +73,7 @@ def apply_parameter(image, parameter, satellite):
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("📍 Coordinate Editor")
+    # Check if values are valid floats before using them in number_input
     u_lat = st.number_input("Upper Lat", value=float(st.session_state.ul_lat), format="%.4f")
     u_lon = st.number_input("Left Lon", value=float(st.session_state.ul_lon), format="%.4f")
     l_lat = st.number_input("Lower Lat", value=float(st.session_state.lr_lat), format="%.4f")
