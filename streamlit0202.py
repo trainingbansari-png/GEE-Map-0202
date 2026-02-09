@@ -10,18 +10,12 @@ from datetime import date, datetime
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
-# ---------------- Session State Initialization ----------------
-# Ensure session state values are valid numbers
-if "ul_lat" not in st.session_state or not isinstance(st.session_state.ul_lat, (int, float)):
-    st.session_state.ul_lat = 22.5  # default value for upper-left latitude
-if "ul_lon" not in st.session_state or not isinstance(st.session_state.ul_lon, (int, float)):
-    st.session_state.ul_lon = 69.5  # default value for upper-left longitude
-if "lr_lat" not in st.session_state or not isinstance(st.session_state.lr_lat, (int, float)):
-    st.session_state.lr_lat = 21.5  # default value for lower-right latitude
-if "lr_lon" not in st.session_state or not isinstance(st.session_state.lr_lon, (int, float)):
-    st.session_state.lr_lon = 70.5  # default value for lower-right longitude
-if "frame_idx" not in st.session_state or not isinstance(st.session_state.frame_idx, int):
-    st.session_state.frame_idx = 1  # default frame index
+# ---------------- Session State ----------------
+if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
+if "ul_lon" not in st.session_state: st.session_state.ul_lon = 69.5
+if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
+if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
+if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -73,7 +67,6 @@ def apply_parameter(image, parameter, satellite):
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("📍 Coordinate Editor")
-    # Ensure valid float input for coordinates
     u_lat = st.number_input("Upper Lat", value=float(st.session_state.ul_lat), format="%.4f")
     u_lon = st.number_input("Left Lon", value=float(st.session_state.ul_lon), format="%.4f")
     l_lat = st.number_input("Lower Lat", value=float(st.session_state.lr_lat), format="%.4f")
@@ -104,19 +97,15 @@ m = folium.Map(location=center, zoom_start=8)
 Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True}).add_to(m)
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
-# ---------------- Main Processing ----------------
-# Capture new area selected by the user
-if map_data and map_data.get("all_drawings"):
-    for drawing in map_data["all_drawings"]:
-        if "geometry" in drawing:
-            coordinates = drawing["geometry"]["coordinates"]
-            ul_lat, ul_lon = coordinates[0][1], coordinates[0][0]
-            lr_lat, lr_lon = coordinates[0][3], coordinates[0][2]
-            st.session_state.ul_lat, st.session_state.ul_lon = ul_lat, ul_lon
-            st.session_state.lr_lat, st.session_state.lr_lon = lr_lat, lr_lon
+if map_data and map_data["all_drawings"]:
+    new_coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
+    lons, lats = zip(*new_coords)
+    st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
+    st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
+    st.rerun()
 
-# Define the new ROI based on updated coordinates (with correct order)
-roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat,
+# ---------------- Main Processing ----------------
+roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
                              st.session_state.lr_lon, st.session_state.ul_lat])
 
 col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
@@ -162,11 +151,7 @@ if total_available > 0:
         
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
-        
-        # Add the layer for the satellite image visualization
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-
-        # Show map and get clicked coordinates
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
     with c2:
