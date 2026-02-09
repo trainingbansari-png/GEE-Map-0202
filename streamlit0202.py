@@ -55,10 +55,7 @@ def mask_clouds(image, satellite):
 def apply_parameter(image, parameter, satellite):
     bm = get_band_map(satellite)
     if parameter == "Level1": return image
-    if parameter == "NDVI":
-        # Calculate NDVI using NIR (B8) and RED (B4)
-        ndvi = image.normalizedDifference([bm['nir'], bm['red']]).rename('NDVI')
-        return ndvi  # Return the NDVI band
+    if parameter == "NDVI": return image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
     if parameter == "NDWI": return image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
     if parameter == "MNDWI": return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
     if parameter == "EVI":
@@ -83,6 +80,15 @@ with st.sidebar:
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
     parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
+    
+    palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
+    palettes = {
+        "Vegetation (Green)": ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301'],
+        "Water (Blue)": ['#ffffd9', '#7fcdbb', '#41b6c4', '#1d91c0', '#0c2c84'],
+        "Thermal (Red)": ['#ffffff', '#fc9272', '#ef3b2c', '#a50f15', '#67000d'],
+        "No Color (Grayscale)": None 
+    }
+    selected_palette = palettes[palette_choice]
 
 # ---------------- Map Selection ----------------
 st.subheader("1. Area Selection")
@@ -128,10 +134,12 @@ if total_available > 0:
 
     c1, c2 = st.columns([1, 1])
     
-    # Default visualization settings for the original color (RGB bands)
-    vis = {"min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
-    bm = get_band_map(satellite)
-    vis["bands"] = [bm['red'], bm['green'], bm['blue']]  # Original RGB bands for visualization
+    vis = {"min": -1, "max": 1}
+    if parameter == "Level1":
+        bm = get_band_map(satellite)
+        vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
+    elif selected_palette:
+        vis["palette"] = selected_palette
 
     with c1:
         st.subheader("2. Visual Review")
@@ -141,62 +149,19 @@ if total_available > 0:
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
         st.write(f"**Frame Timestamp:** {timestamp}")
         
-        # Apply the parameter and visualize
-        img = apply_parameter(img, parameter, satellite).clip(roi)
-        
-        if parameter == "Level1":
-            # Use original bands for Level1 (RGB)
-            img = img.visualize(bands=[bm['red'], bm['green'], bm['blue']], min=0, max=3000 if "Sentinel" in satellite else 15000)
-        elif parameter == "NDVI":
-            # Use a color palette for NDVI visualization (green for high NDVI, red for low)
-            img = img.visualize(min=-1, max=1, palette=['#ff0000', '#ffff00', '#00ff00'])  # Red to Green for NDVI
-        else:
-            # For other parameters like NDWI, EVI, etc.
-            img = img.visualize(min=-1, max=1)
-
-        try:
-            # Try to get the map using the updated visualization
-            map_id = img.getMapId()
-            f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, 
-                                         (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
-            folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-            st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}")
-        except Exception as e:
-            st.error(f"Error retrieving map: {e}")
+        map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
+        f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
+        folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
+        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
     with c2:
         st.subheader("3. Export")
         fps = st.slider("Frames Per Second", 1, 15, 5)
         if st.button("🎬 Generate Animated Timelapse"):
             with st.spinner("Generating..."):
-                # Limit the collection to a smaller number of frames (optional, to avoid large requests)
-                video_col = display_collection.limit(20)  # Limit to 20 frames for testing
-
-                try:
-                    # Select only 3 bands (for RGB) or 1 band (for NDVI, etc.)
-                    if parameter == "Level1":
-                        # Select RGB bands for Level1 visualization
-                        video_col = video_col.map(lambda img: img.select([bm['red'], bm['green'], bm['blue']]))
-                    elif parameter == "NDVI":
-                        # Select only the NDVI band for NDVI visualization
-                        video_col = video_col.map(lambda img: img.select("NDVI"))
-                    else:
-                        # For other parameters (e.g., NDWI, EVI), select the first available band
-                        video_col = video_col.map(lambda img: img.select([bm['red'], bm['green'], bm['blue']]))
-
-                    # Generate video with selected bands
-                    video_url = video_col.getVideoThumbURL({
-                        'dimensions': 720,               # Video dimensions
-                        'region': roi,                   # Make sure region is correctly defined
-                        'framesPerSecond': fps,          # Frames per second (adjust as needed)
-                    })
-
-                    if video_url:
-                        st.image(video_url, caption=f"Timelapse: {parameter}")
-                        st.markdown(f"### [📥 Download Result]({video_url})")
-                    else:
-                        st.error("Error generating video. Try reducing the number of frames or adjusting parameters.")
-                except Exception as e:
-                    st.error(f"Error generating timelapse: {e}")
+                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
+                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
+                st.image(video_url, caption=f"Timelapse: {parameter}")
+                st.markdown(f"### [📥 Download Result]({video_url})")
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
