@@ -107,7 +107,6 @@ if map_data and map_data.get("all_drawings"):
             lr_lat, lr_lon = coordinates[0][3], coordinates[0][2]
             st.session_state.ul_lat, st.session_state.ul_lon = ul_lat, ul_lon
             st.session_state.lr_lat, st.session_state.lr_lon = lr_lat, lr_lon
-            st.experimental_rerun()
 
 # Define the new ROI based on updated coordinates
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
