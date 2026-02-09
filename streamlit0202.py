@@ -102,7 +102,7 @@ draw.add_to(m)
 # Get map data with drawn shapes
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
-# Update coordinates from drawn rectangle
+# Store the coordinates of the drawn rectangle in session state
 if map_data and map_data["all_drawings"]:
     new_coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
     lons, lats = zip(*new_coords)
