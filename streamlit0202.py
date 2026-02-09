@@ -186,6 +186,7 @@ if total_available > 0:
         if param_value:
             value = param_value.get(parameter)  # Get the actual value for the selected parameter
             st.write(f"**{parameter} Value:** {value:.4f}")
+            st.write(f"**Parameter Debug**: {parameter}, Value: {value}")
         else:
             value = None  # If value is None, handle accordingly
             st.warning("Unable to compute parameter value for this frame.")
