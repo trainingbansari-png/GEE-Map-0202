@@ -64,6 +64,30 @@ def apply_parameter(image, parameter, satellite):
         ).rename(parameter)
     return image
 
+# ---------------- Function to Get Parameter Values ----------------
+def get_parameter_value(image, parameter, satellite):
+    bm = get_band_map(satellite)
+    
+    if parameter == "NDVI":
+        ndvi = image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
+        return ndvi.reduceRegion(ee.Reducer.mean(), roi, 30).get(parameter).getInfo()
+    
+    if parameter == "NDWI":
+        ndwi = image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
+        return ndwi.reduceRegion(ee.Reducer.mean(), roi, 30).get(parameter).getInfo()
+    
+    if parameter == "MNDWI":
+        mndwi = image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
+        return mndwi.reduceRegion(ee.Reducer.mean(), roi, 30).get(parameter).getInfo()
+    
+    if parameter == "EVI":
+        evi = image.expression('2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
+            {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red']), 'BLUE': image.select(bm['blue'])}
+        ).rename(parameter)
+        return evi.reduceRegion(ee.Reducer.mean(), roi, 30).get(parameter).getInfo()
+
+    return None
+
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("📍 Coordinate Editor")
@@ -148,6 +172,11 @@ if total_available > 0:
         
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
         st.write(f"**Frame Timestamp:** {timestamp}")
+        
+        # Get parameter value
+        parameter_value = get_parameter_value(img, parameter, satellite)
+        if parameter_value is not None:
+            st.write(f"**{parameter} Value:** {parameter_value}")
         
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
