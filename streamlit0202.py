@@ -55,10 +55,14 @@ def mask_clouds(image, satellite):
 
 def apply_parameter(image, parameter, satellite):
     bm = get_band_map(satellite)
-    if parameter == "Level1": return image
-    if parameter == "NDVI": return image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
-    if parameter == "NDWI": return image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
-    if parameter == "MNDWI": return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
+    if parameter == "Level1":
+        return image  # Return the raw image without any parameter transformation
+    if parameter == "NDVI":
+        return image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
+    if parameter == "NDWI":
+        return image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
+    if parameter == "MNDWI":
+        return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
     if parameter == "EVI":
         return image.expression('2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
             {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red']), 'BLUE': image.select(bm['blue'])}
@@ -80,7 +84,12 @@ def get_parameter_value(img, parameter, roi, satellite):
             maxPixels=1e6  # Limit the number of pixels to avoid large datasets
         )
         
-        return param_value.getInfo()  # Return the result
+        result = param_value.getInfo()  # Return the result
+        if result and parameter in result:
+            return result
+        else:
+            st.warning(f"Unable to compute {parameter} value for this region.")
+            return None  # If an error occurs or no value, return None
         
     except Exception as e:
         st.error(f"Error calculating {parameter}: {e}")
@@ -175,15 +184,16 @@ if total_available > 0:
         param_value = get_parameter_value(img, parameter, roi, satellite)
         
         if param_value:
-            st.write(f"**{parameter} Value:** {param_value.get(parameter):.4f}")
+            value = param_value.get(parameter)  # Get the actual value for the selected parameter
+            st.write(f"**{parameter} Value:** {value:.4f}")
         else:
+            value = None  # If value is None, handle accordingly
             st.warning("Unable to compute parameter value for this frame.")
         
-        # Display color panel based on value
-        value = param_value.get(parameter) if param_value else 0
-        color = get_color_for_value(parameter, value)
-        
-        st.markdown(f"<div style='background-color:{color}; padding:10px; width:100%; color:white;'>Value: {value:.4f}</div>", unsafe_allow_html=True)
+        # Display color panel based on value (only if value is valid)
+        if value is not None:
+            color = get_color_for_value(parameter, value)
+            st.markdown(f"<div style='background-color:{color}; padding:10px; width:100%; color:white;'>Value: {value:.4f}</div>", unsafe_allow_html=True)
 
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
