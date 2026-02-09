@@ -94,15 +94,23 @@ with st.sidebar:
 st.subheader("1. Area Selection")
 center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
 m = folium.Map(location=center, zoom_start=8)
-Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True}).add_to(m)
+Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":True,"rectangle":False}).add_to(m)
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
-if map_data and map_data["all_drawings"]:
-    new_coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
-    lons, lats = zip(*new_coords)
-    st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
-    st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
-    st.rerun()
+if map_data and map_data.get("last_clicked"):
+    clicked_lat, clicked_lon = map_data["last_clicked"]["latlng"]
+    st.write(f"Clicked Location: Latitude = {clicked_lat}, Longitude = {clicked_lon}")
+    
+    # Define the point where the user clicked
+    point = ee.Geometry.Point(clicked_lon, clicked_lat)
+    
+    # Retrieve the image at the clicked location
+    img = ee.Image(display_collection.toList(display_count).get(st.session_state.frame_idx-1))
+    
+    # Get the parameter value at that point
+    value = img.sample(region=point, scale=10).first().get(parameter).getInfo()
+    
+    st.write(f"Parameter {parameter} value at clicked location: {value}")
 
 # ---------------- Main Processing ----------------
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
@@ -152,22 +160,8 @@ if total_available > 0:
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
         
-        # Add a click event to get parameter values
+        # Add the layer for the satellite image visualization
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-
-        # Add a click listener to fetch the parameter value for clicked point
-        folium.Marker([center[0], center[1]], popup="Click to get parameter values").add_to(f_map)
-
-        # Interaction with map
-        def on_map_click(event):
-            lat, lon = event.latlng
-            point = ee.Geometry.Point(lon, lat)
-            image = ee.Image(display_collection.toList(display_count).get(idx-1))
-            value = image.sample(region=point, scale=10).first().get(parameter).getInfo()
-            st.write(f"Parameter {parameter} value at clicked location: {value}")
-
-        # Map interaction - capturing the click event and extracting values
-        f_map.on('click', on_map_click)
 
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
