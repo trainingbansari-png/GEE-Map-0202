@@ -17,6 +17,7 @@ if "ul_lon" not in st.session_state: st.session_state.ul_lon = 69.5
 if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
 if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
 if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
+if "clicked_value" not in st.session_state: st.session_state.clicked_value = None
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -257,6 +258,10 @@ if total_available > 0:
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
+        
+        # Handle click event and get clicked value
+        f_map.on_click(lambda e: st.session_state.clicked_value)
+
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
     with c2:
