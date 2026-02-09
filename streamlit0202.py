@@ -65,41 +65,6 @@ def apply_parameter(image, parameter, satellite):
         ).rename(parameter)
     return image
 
-def get_color_legend(parameter):
-    """Create color legend based on the selected parameter with intuitive color names"""
-    if parameter == "NDVI":
-        colors = ['#ffffcc', '#ffcc00', '#ff9900', '#ff6600', '#ff0000']
-        labels = ['Very Low (Light Yellow)', 'Low (Yellow)', 'Moderate (Orange)', 'High (Red)', 'Very High (Dark Red)']
-        values = ['< -0.2', '-0.2 to 0.0', '0.0 to 0.2', '0.2 to 0.5', '> 0.5']
-    elif parameter == "NDWI":
-        colors = ['#ffffcc', '#66ccff', '#3399cc', '#0066cc']
-        labels = ['Very Low (Light Yellow)', 'Low Water (Light Blue)', 'Moderate Water (Blue)', 'High Water (Dark Blue)']
-        values = ['< 0.1', '0.1 to 0.2', '0.2 to 0.4', '> 0.4']
-    elif parameter == "EVI":
-        colors = ['#f7fcf5', '#c7e9c0', '#a1d99b', '#74c476', '#31a354', '#006d2c']
-        labels = ['Very Low (Very Light Green)', 'Low (Light Green)', 'Medium (Green)', 'High (Medium Green)', 'Very High (Dark Green)']
-        values = ['< -0.3', '-0.3 to -0.1', '-0.1 to 0.2', '0.2 to 0.4', '> 0.4']
-    else:
-        colors = ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301']
-        labels = ['Very Low Vegetation (White)', 'Low Vegetation (Light Brown)', 'Moderate Vegetation (Yellow)', 'High Vegetation (Green)', 'Very High Vegetation (Dark Green)']
-        values = ['< 0.2', '0.2 to 0.5', '0.5 to 0.7', '> 0.7']
-
-    return colors, labels, values
-
-def calculate_statistics(parameter, roi, collection):
-    """Calculate statistics (mean, min, max, std) for the selected parameter"""
-    mean = collection.mean().select(parameter).clip(roi)
-    min_val = collection.min().select(parameter).clip(roi)
-    max_val = collection.max().select(parameter).clip(roi)
-    std_dev = collection.reduce(ee.Reducer.stdDev()).select(parameter).clip(roi)
-
-    return {
-        "mean": mean.reduceRegion(ee.Reducer.mean(), roi).getInfo(),
-        "min": min_val.reduceRegion(ee.Reducer.min(), roi).getInfo(),
-        "max": max_val.reduceRegion(ee.Reducer.max(), roi).getInfo(),
-        "std_dev": std_dev.reduceRegion(ee.Reducer.stdDev(), roi).getInfo()
-    }
-
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("📍 Coordinate Editor")
@@ -116,7 +81,7 @@ with st.sidebar:
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
     parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "EVI"])
-
+    
     palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
     palettes = {
         "Vegetation (Green)": ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301'],
@@ -200,19 +165,33 @@ if total_available > 0:
                 st.image(video_url, caption=f"Timelapse: {parameter}")
                 st.markdown(f"### [📥 Download Result]({video_url})")
 
-    # Display color legend
-    colors, labels, values = get_color_legend(parameter)
-    color_df = pd.DataFrame({
-        "Range": values,
-        "Label": labels,
-        "Color": [f'<span style="color:{color};">{color}</span>' for color in colors]
-    })
-    st.subheader("📊 Color Legend")
-    st.write(color_df.to_html(escape=False), unsafe_allow_html=True)
+    # ---------------- Calculate Statistics ----------------
+    def calculate_statistics(parameter, roi, collection):
+        """Calculate statistics (mean, min, max, std) for the selected parameter"""
+        # Apply reducer functions for the parameter on the image collection
+        mean = collection.mean().select(parameter).clip(roi)
+        min_val = collection.min().select(parameter).clip(roi)
+        max_val = collection.max().select(parameter).clip(roi)
+        std_dev = collection.reduce(ee.Reducer.stdDev()).select(parameter).clip(roi)
 
-    # Display parameter statistics
+        # Fetch statistics asynchronously
+        mean_result = mean.reduceRegion(ee.Reducer.mean(), roi, maxPixels=1e8).getInfo()
+        min_result = min_val.reduceRegion(ee.Reducer.min(), roi, maxPixels=1e8).getInfo()
+        max_result = max_val.reduceRegion(ee.Reducer.max(), roi, maxPixels=1e8).getInfo()
+        std_dev_result = std_dev.reduceRegion(ee.Reducer.stdDev(), roi, maxPixels=1e8).getInfo()
+
+        return {
+            "mean": mean_result,
+            "min": min_result,
+            "max": max_result,
+            "std_dev": std_dev_result
+        }
+
+    # Call function to calculate statistics
     stats = calculate_statistics(parameter, roi, full_collection)
-    stats_df = pd.DataFrame(stats)
+
+    # Convert to DataFrame for easy display
+    stats_df = pd.DataFrame(stats, index=[0])
     st.subheader("📊 Parameter Statistics")
     st.write(stats_df)
 
