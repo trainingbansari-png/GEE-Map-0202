@@ -104,9 +104,13 @@ if total_images > 0:
         img = ee.Image(image_list.get(i))
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD").getInfo()
 
-        # Get a small thumbnail image for preview
-        thumb = img.getThumbURL({'dimensions': 100, 'region': roi, 'format': 'png'})
-        image_urls.append((thumb, timestamp))
+        try:
+            # Try generating thumbnail with smaller dimensions (60px)
+            thumb = img.getThumbURL({'dimensions': 60, 'region': roi, 'format': 'png'})
+            image_urls.append((thumb, timestamp))
+        except Exception as e:
+            st.warning(f"Error generating thumbnail for image {i+1}: {str(e)}")
+            continue
     
     # Display thumbnails as clickable images
     selected_frame = None
