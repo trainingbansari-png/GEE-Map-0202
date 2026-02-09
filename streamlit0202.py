@@ -190,10 +190,13 @@ if total_available > 0:
             value = None  # If value is None, handle accordingly
             st.warning("Unable to compute parameter value for this frame.")
         
-        # Display color panel based on value (only if value is valid)
-        if value is not None:
+        # Ensure that value is a valid numeric value
+        if value is not None and isinstance(value, (int, float)):
+            # Display color panel based on value (only if value is valid)
             color = get_color_for_value(parameter, value)
             st.markdown(f"<div style='background-color:{color}; padding:10px; width:100%; color:white;'>Value: {value:.4f}</div>", unsafe_allow_html=True)
+        else:
+            st.warning("No valid value to display color panel.")
 
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
