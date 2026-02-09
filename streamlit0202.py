@@ -149,7 +149,18 @@ if total_available > 0:
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
         st.write(f"**Frame Timestamp:** {timestamp}")
         
-        map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
+        # Show the selected parameter value for the current frame
+        param_image = apply_parameter(img, parameter, satellite)
+        param_value = param_image.select(parameter).reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=roi,
+            scale=30,  # Adjust scale as per your dataset
+            maxPixels=1e8
+        ).getInfo()
+        
+        st.write(f"**{parameter} Value:** {param_value.get(parameter):.4f}")
+        
+        map_id = param_image.clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
