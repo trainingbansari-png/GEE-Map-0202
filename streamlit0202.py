@@ -164,36 +164,36 @@ if total_available > 0:
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
                 st.markdown(f"### [📥 Download Result]({video_url})")
-
-    # ---------------- Calculate Statistics ----------------
-    def calculate_statistics(parameter, roi, collection):
-        """Calculate statistics (mean, min, max, std) for the selected parameter"""
-        # Apply reducer functions for the parameter on the image collection
-        mean = collection.mean().select(parameter).clip(roi)
-        min_val = collection.min().select(parameter).clip(roi)
-        max_val = collection.max().select(parameter).clip(roi)
-        std_dev = collection.reduce(ee.Reducer.stdDev()).select(parameter).clip(roi)
-
-        # Fetch statistics asynchronously
-        mean_result = mean.reduceRegion(ee.Reducer.mean(), roi, maxPixels=1e8).getInfo()
-        min_result = min_val.reduceRegion(ee.Reducer.min(), roi, maxPixels=1e8).getInfo()
-        max_result = max_val.reduceRegion(ee.Reducer.max(), roi, maxPixels=1e8).getInfo()
-        std_dev_result = std_dev.reduceRegion(ee.Reducer.stdDev(), roi, maxPixels=1e8).getInfo()
-
-        return {
-            "mean": mean_result,
-            "min": min_result,
-            "max": max_result,
-            "std_dev": std_dev_result
-        }
-
-    # Call function to calculate statistics
-    stats = calculate_statistics(parameter, roi, full_collection)
-
-    # Convert to DataFrame for easy display
-    stats_df = pd.DataFrame(stats, index=[0])
-    st.subheader("📊 Parameter Statistics")
-    st.write(stats_df)
-
 else:
     st.warning(f"No images found for {satellite} in this area/date range. Try a larger ROI or date span.")
+
+# ---------------- Statistics Calculation ----------------
+def calculate_statistics(parameter, roi, collection):
+    """Calculate statistics (mean, min, max, std) for the selected parameter."""
+    
+    # Reduce the image collection by applying the appropriate reducer to each image
+    mean = collection.mean().select(parameter).clip(roi)
+    min_val = collection.min().select(parameter).clip(roi)
+    max_val = collection.max().select(parameter).clip(roi)
+    std_dev = collection.reduce(ee.Reducer.stdDev()).select(parameter).clip(roi)
+
+    # Fetch statistics asynchronously for smaller regions
+    mean_result = mean.reduceRegion(ee.Reducer.mean(), roi, maxPixels=5000000).getInfo()
+    min_result = min_val.reduceRegion(ee.Reducer.min(), roi, maxPixels=5000000).getInfo()
+    max_result = max_val.reduceRegion(ee.Reducer.max(), roi, maxPixels=5000000).getInfo()
+    std_dev_result = std_dev.reduceRegion(ee.Reducer.stdDev(), roi, maxPixels=5000000).getInfo()
+
+    return {
+        "mean": mean_result,
+        "min": min_result,
+        "max": max_result,
+        "std_dev": std_dev_result
+    }
+
+# Call function to calculate statistics
+stats = calculate_statistics(parameter, roi, full_collection)
+
+# Display statistics in a table
+stats_df = pd.DataFrame(stats)
+st.subheader("📊 Statistics")
+st.write(stats_df)
