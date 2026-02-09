@@ -125,10 +125,10 @@ if total_available > 0:
 
     c1, c2 = st.columns([1, 1])
     
-    vis = {"min": -1, "max": 1}
-    if parameter == "Level1":
-        bm = get_band_map(satellite)
-        vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
+    # Default visualization settings for the original color (RGB bands)
+    vis = {"min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
+    bm = get_band_map(satellite)
+    vis["bands"] = [bm['red'], bm['green'], bm['blue']]  # Original RGB bands for visualization
 
     with c1:
         st.subheader("2. Visual Review")
