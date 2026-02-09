@@ -94,12 +94,15 @@ with st.sidebar:
 st.subheader("1. Area Selection")
 center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
 m = folium.Map(location=center, zoom_start=8)
-draw = Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":False,"rectangle":True})
+
+# Initialize drawing tools on the map
+draw = Draw(draw_options={"polyline": False, "polygon": False, "circle": False, "marker": False, "rectangle": True})
 draw.add_to(m)
 
-# Get the coordinates from the drawn rectangle and update the session state
+# Get map data with drawn shapes
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
+# Update coordinates from drawn rectangle
 if map_data and map_data["all_drawings"]:
     new_coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
     lons, lats = zip(*new_coords)
