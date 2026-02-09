@@ -151,18 +151,22 @@ if total_available > 0:
         # Show map and get clicked coordinates
         map_data = st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
-        # Handle user clicking on the map
-        if map_data and map_data.get("last_clicked"):
-            clicked_lat, clicked_lon = map_data["last_clicked"]["latlng"]
-            st.write(f"Clicked Location: Latitude = {clicked_lat}, Longitude = {clicked_lon}")
-            
-            # Define the point where the user clicked
-            point = ee.Geometry.Point(clicked_lon, clicked_lat)
-            
-            # Retrieve the image at the clicked location
-            value = img.sample(region=point, scale=10).first().get(parameter).getInfo()
-            
-            st.write(f"Parameter {parameter} value at clicked location: {value}")
+        # Capture and handle user clicks
+        if map_data and "all_drawings" in map_data:
+            for drawing in map_data["all_drawings"]:
+                # Extract coordinates of the shape drawn by the user
+                if "geometry" in drawing:
+                    coords = drawing["geometry"]["coordinates"]
+                    lat, lon = coords[0][1], coords[0][0]  # Use the first coordinate (rectangle corner or marker)
+                    st.write(f"Clicked Location: Latitude = {lat}, Longitude = {lon}")
+                    
+                    # Define the point where the user clicked
+                    point = ee.Geometry.Point(lon, lat)
+                    
+                    # Retrieve the image at the clicked location
+                    value = img.sample(region=point, scale=10).first().get(parameter).getInfo()
+                    
+                    st.write(f"Parameter {parameter} value at clicked location: {value}")
 
     with c2:
         st.subheader("3. Export")
