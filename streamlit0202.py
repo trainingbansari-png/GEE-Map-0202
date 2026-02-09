@@ -139,12 +139,15 @@ if total_available > 0:
         st.write(f"**Frame Timestamp:** {timestamp}")
         
         # Ensure visualization is applied properly before getting the map ID
-        img = apply_parameter(img, parameter, satellite).clip(roi).visualize(**vis)
+        img_copy = img.copy()  # Create a copy to retain original bands
+        img_copy = apply_parameter(img_copy, parameter, satellite).clip(roi)  # Apply parameter after retaining original bands
+        img_copy = img_copy.visualize(**vis)
 
         try:
             # Try to get the map using the updated visualization
-            map_id = img.getMapId()
-            f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
+            map_id = img_copy.getMapId()
+            f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, 
+                                         (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
             folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
             st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}")
         except Exception as e:
