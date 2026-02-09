@@ -105,8 +105,9 @@ if total_images > 0:
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD").getInfo()
 
         try:
-            # Try generating thumbnail with smaller dimensions (60px)
-            thumb = img.getThumbURL({'dimensions': 60, 'region': roi, 'format': 'png'})
+            # Specify only the RGB bands (B4, B3, B2 for Sentinel-2 or similar for Landsat)
+            rgb_bands = img.select(['B4', 'B3', 'B2'])  # Update with correct RGB bands
+            thumb = rgb_bands.getThumbURL({'dimensions': 60, 'region': roi, 'format': 'png'})
             image_urls.append((thumb, timestamp))
         except Exception as e:
             st.warning(f"Error generating thumbnail for image {i+1}: {str(e)}")
