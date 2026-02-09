@@ -98,6 +98,18 @@ Draw(draw_options={"polyline":False,"polygon":False,"circle":False,"marker":Fals
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
 # ---------------- Main Processing ----------------
+# Capture new area selected by the user
+if map_data and map_data.get("all_drawings"):
+    for drawing in map_data["all_drawings"]:
+        if "geometry" in drawing:
+            coordinates = drawing["geometry"]["coordinates"]
+            ul_lat, ul_lon = coordinates[0][1], coordinates[0][0]
+            lr_lat, lr_lon = coordinates[0][3], coordinates[0][2]
+            st.session_state.ul_lat, st.session_state.ul_lon = ul_lat, ul_lon
+            st.session_state.lr_lat, st.session_state.lr_lon = lr_lat, lr_lon
+            st.experimental_rerun()
+
+# Define the new ROI based on updated coordinates
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
                              st.session_state.lr_lon, st.session_state.ul_lat])
 
@@ -149,21 +161,7 @@ if total_available > 0:
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
 
         # Show map and get clicked coordinates
-        map_data = st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
-
-        # Handle drawing interaction
-        if map_data and "geometry" in map_data:
-            # Extract coordinates from the geometry and handle click
-            coordinates = map_data["geometry"]["coordinates"]
-            clicked_lat, clicked_lon = coordinates[0][1], coordinates[0][0]  # Use the first point (top-left corner of the rectangle)
-            st.write(f"Clicked Location: Latitude = {clicked_lat}, Longitude = {clicked_lon}")
-
-            # Define the point
-            point = ee.Geometry.Point(clicked_lon, clicked_lat)
-            
-            # Retrieve the parameter value at the clicked point
-            value = img.sample(region=point, scale=10).first().get(parameter).getInfo()
-            st.write(f"Parameter {parameter} value at clicked location: {value}")
+        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
     with c2:
         st.subheader("3. Export")
