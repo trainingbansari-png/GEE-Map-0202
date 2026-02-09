@@ -5,6 +5,8 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import matplotlib.pyplot as plt
+import numpy as np
 
 # ---------------- Page Config ----------------
 st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
@@ -63,6 +65,23 @@ def apply_parameter(image, parameter, satellite):
             {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red']), 'BLUE': image.select(bm['blue'])}
         ).rename(parameter)
     return image
+
+def get_color_legend(parameter):
+    """Create color legend based on the selected parameter"""
+    if parameter == "NDVI":
+        colors = ['#ffffcc', '#ffcc00', '#ff9900', '#ff6600', '#ff0000']
+        labels = ['Very Low', 'Low', 'Moderate', 'High', 'Very High']
+    elif parameter == "NDWI":
+        colors = ['#ffffcc', '#66ccff', '#3399cc', '#0066cc']
+        labels = ['Dry', 'Low Water', 'Medium Water', 'High Water']
+    elif parameter == "EVI":
+        colors = ['#f7fcf5', '#c7e9c0', '#a1d99b', '#74c476', '#31a354', '#006d2c']
+        labels = ['Very Low', 'Low', 'Medium', 'High', 'Very High']
+    else:
+        colors = ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301']  # Default Vegetation
+        labels = ['Low', 'Moderate', 'High']
+
+    return colors, labels
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
@@ -145,6 +164,17 @@ if total_available > 0:
         vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
     elif selected_palette:
         vis["palette"] = selected_palette
+
+    # Generate color legend based on selected parameter
+    colors, labels = get_color_legend(parameter)
+    st.subheader("Color Legend")
+    legend_fig, legend_ax = plt.subplots(figsize=(6, 1))
+    gradient = np.linspace(0, 1, len(colors))
+    legend_ax.imshow([gradient], aspect='auto', cmap=plt.cm.RdYlGn)
+    legend_ax.set_xticks(np.linspace(0, 1, len(labels)))
+    legend_ax.set_xticklabels(labels)
+    legend_ax.set_yticks([])
+    st.pyplot(legend_fig)
 
     with c1:
         st.subheader("2. Visual Review")
