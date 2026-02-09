@@ -11,7 +11,7 @@ st.set_page_config(layout="wide", page_title="GEE Timelapse Pro")
 st.title("🌍 GEE Satellite Video Generator")
 
 # ---------------- Session State Initialization ----------------
-# Initialize default values if they are not already in the session state
+# Ensure session state values are valid numbers
 if "ul_lat" not in st.session_state or not isinstance(st.session_state.ul_lat, (int, float)):
     st.session_state.ul_lat = 22.5  # default value for upper-left latitude
 if "ul_lon" not in st.session_state or not isinstance(st.session_state.ul_lon, (int, float)):
@@ -73,7 +73,7 @@ def apply_parameter(image, parameter, satellite):
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("📍 Coordinate Editor")
-    # Check if values are valid floats before using them in number_input
+    # Ensure valid float input for coordinates
     u_lat = st.number_input("Upper Lat", value=float(st.session_state.ul_lat), format="%.4f")
     u_lon = st.number_input("Left Lon", value=float(st.session_state.ul_lon), format="%.4f")
     l_lat = st.number_input("Lower Lat", value=float(st.session_state.lr_lat), format="%.4f")
@@ -115,8 +115,8 @@ if map_data and map_data.get("all_drawings"):
             st.session_state.ul_lat, st.session_state.ul_lon = ul_lat, ul_lon
             st.session_state.lr_lat, st.session_state.lr_lon = lr_lat, lr_lon
 
-# Define the new ROI based on updated coordinates
-roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, 
+# Define the new ROI based on updated coordinates (with correct order)
+roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat,
                              st.session_state.lr_lon, st.session_state.ul_lat])
 
 col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
