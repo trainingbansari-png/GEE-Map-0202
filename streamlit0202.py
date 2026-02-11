@@ -99,34 +99,29 @@ with st.sidebar:
 
     # --- FULL FORM & RANGE GUIDE TABLE ---
     st.divider()
-    st.header("📖 Parameter Full Forms & Guide")
+    st.header("📖 Color Range Table")
     
     if parameter == "NDVI":
-        st.write("**Full Form:** Normalized Difference Vegetation Index")
         st.table({
             "Color Name": ["Dark Green", "Light Green", "Yellow/Brown", "Blue"],
             "Range": ["0.6 to 1.0", "0.2 to 0.6", "0.0 to 0.2", "-1.0 to -0.1"],
             "Meaning": ["Forest", "Crops/Grass", "Soil/Urban", "Water/Snow"]
         })
     elif parameter == "NDWI":
-        st.write("**Full Form:** Normalized Difference Water Index")
         st.table({
             "Color Name": ["Dark Blue", "Light Blue", "White"],
             "Range": ["0.3 to 1.0", "0.0 to 0.3", "-1.0 to 0.0"],
             "Meaning": ["Deep Water", "Shallow Water", "Dry Land"]
         })
     elif parameter == "MNDWI":
-        st.write("**Full Form:** Modified Normalized Difference Water Index")
         st.info("Uses SWIR band to better distinguish water from urban buildings.")
     elif parameter == "NDSI":
-        st.write("**Full Form:** Normalized Difference Snow Index")
         st.table({
             "Color Name": ["Bright White", "Grey", "Black"],
             "Range": ["0.4 to 1.0", "0.1 to 0.4", "-1.0 to 0.1"],
             "Meaning": ["Snow Cover", "Ice/Clouds", "Land/Water"]
         })
     elif parameter == "EVI":
-        st.write("**Full Form:** Enhanced Vegetation Index")
         st.info("Improves on NDVI by reducing atmospheric noise and soil background interference.")
 
 # ---------------- Main Logic ----------------
