@@ -86,16 +86,30 @@ with st.sidebar:
     }
     selected_palette = palettes[palette_choice]
 
+    # --- UPDATED FULL RANGE INTERPRETATION TABLE ---
     st.divider()
-    st.header("📖 Interpretation Guide")
+    st.header("📖 Full Range Guide (1 to -1)")
+    
     if parameter == "NDVI":
-        st.table({"Color": ["Dark Green", "Light Green", "Yellow/Brown", "Blue/White"], 
-                  "Range": ["> 0.6", "0.2 - 0.5", "0 - 0.1", "< 0"], 
-                  "Feature": ["Forest", "Agriculture", "Bare Soil", "Water/Snow"]})
-    elif "NDWI" in parameter:
-        st.table({"Color": ["Deep Blue", "Light Blue", "White"], 
-                  "Range": ["> 0.3", "0 - 0.2", "< 0"], 
-                  "Feature": ["Open Water", "Moist Soil", "Dry Land"]})
+        st.table({
+            "Range Value": ["0.6 to 1.0", "0.2 to 0.6", "0.0 to 0.2", "-0.1 to 0.0", "-1.0 to -0.1"],
+            "Description": ["Dense Vegetation", "Shrubs/Crops", "Soil/Urban", "Barren/Sand", "Water/Snow"]
+        })
+    elif "NDWI" in parameter or "MNDWI" in parameter:
+        st.table({
+            "Range Value": ["0.4 to 1.0", "0.1 to 0.4", "0.0 to 0.1", "-0.5 to 0.0", "-1.0 to -0.5"],
+            "Description": ["Deep Water", "Shallow Water", "Moist Soil", "Dry Land", "Dense Vegetation"]
+        })
+    elif parameter == "NDSI":
+        st.table({
+            "Range Value": ["0.4 to 1.0", "0.1 to 0.4", "0.0 to 0.1", "-1.0 to 0.0"],
+            "Description": ["Snow Cover", "Mixed Ice", "Clouds", "Water/Land"]
+        })
+    else:
+        st.table({
+            "Range Value": ["0.5 to 1.0", "0.0 to 0.5", "-0.5 to 0.0", "-1.0 to -0.5"],
+            "Description": ["High Intensity", "Moderate", "Low Intensity", "Inverted/Noise"]
+        })
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
@@ -127,22 +141,20 @@ display_count = display_collection.size().getInfo()
 
 if total_available > 0:
     st.divider()
-    
     m1, m2, m3 = st.columns(3)
-    m1.metric("Total Archive Images", total_available)
+    m1.metric("Archive Images", total_available)
     m2.metric("Preview Frames", display_count)
-    m3.metric("Current Sensor", satellite)
+    m3.metric("Sensor", satellite)
 
     c1, c2 = st.columns([1, 1])
 
     with c1:
-        st.subheader("2. Visual Review & Area Calculation")
+        st.subheader("2. Review & Stats")
         idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
         st.session_state.frame_idx = idx
         img = ee.Image(display_collection.toList(display_count).get(idx-1))
         processed_img = apply_parameter(img, parameter, satellite)
         
-        # --- CALCULATION LOGIC ---
         if parameter != "Level1":
             with st.spinner("Calculating mean..."):
                 mean_dict = processed_img.reduceRegion(
@@ -151,12 +163,9 @@ if total_available > 0:
                     scale=30,
                     maxPixels=1e9
                 ).getInfo()
-                
                 val = mean_dict.get(parameter)
                 if val is not None:
-                    st.metric(label=f"Mean {parameter} for ROI", value=f"{val:.4f}")
-                else:
-                    st.warning("Calculation returned no data (possibly cloud-masked).")
+                    st.metric(label=f"Mean {parameter}", value=f"{val:.4f}")
 
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
         st.caption(f"📅 **Time:** {timestamp}")
@@ -178,7 +187,7 @@ if total_available > 0:
         st.subheader("3. Export")
         fps = st.slider("Speed (FPS)", 1, 15, 5)
         if st.button("🎬 Generate Animated Timelapse"):
-            with st.spinner("Generating Video..."):
+            with st.spinner("Generating..."):
                 video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
