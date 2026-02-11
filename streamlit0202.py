@@ -75,7 +75,18 @@ with st.sidebar:
     start_date = st.date_input("Start Date", date(2024, 1, 1))
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
-    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "NDSI", "EVI"])
+    
+    # PARAMETER SELECTION WITH DESCRIPTIONS
+    param_options = {
+        "Level1": "Natural Color (RGB)",
+        "NDVI": "NDVI - Normalized Difference Vegetation Index",
+        "NDWI": "NDWI - Normalized Difference Water Index",
+        "MNDWI": "MNDWI - Modified Normalized Difference Water Index",
+        "NDSI": "NDSI - Normalized Difference Snow Index",
+        "EVI": "EVI - Enhanced Vegetation Index"
+    }
+    param_label = st.selectbox("Select Parameter", list(param_options.values()))
+    parameter = param_label.split(" - ")[0] if " - " in param_label else "Level1"
     
     palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
     palettes = {
@@ -86,30 +97,37 @@ with st.sidebar:
     }
     selected_palette = palettes[palette_choice]
 
-    # --- UPDATED FULL RANGE INTERPRETATION TABLE WITH COLOR NAMES ---
+    # --- FULL FORM & RANGE GUIDE TABLE ---
     st.divider()
-    st.header("📖 Color Range Guide (1 to -1)")
+    st.header("📖 Parameter Full Forms & Guide")
     
     if parameter == "NDVI":
+        st.write("**Full Form:** Normalized Difference Vegetation Index")
         st.table({
-            "Color Name": ["Dark Green", "Light Green", "Yellow/Brown", "White", "Blue"],
-            "Range": ["0.6 to 1.0", "0.2 to 0.6", "0.0 to 0.2", "-0.1 to 0.0", "-1.0 to -0.1"],
-            "Feature": ["Forest", "Crops", "Soil", "Snow/Sand", "Water"]
+            "Color Name": ["Dark Green", "Light Green", "Yellow/Brown", "Blue"],
+            "Range": ["0.6 to 1.0", "0.2 to 0.6", "0.0 to 0.2", "-1.0 to -0.1"],
+            "Meaning": ["Forest", "Crops/Grass", "Soil/Urban", "Water/Snow"]
         })
-    elif "NDWI" in parameter or "MNDWI" in parameter:
+    elif parameter == "NDWI":
+        st.write("**Full Form:** Normalized Difference Water Index")
         st.table({
-            "Color Name": ["Dark Blue", "Light Blue", "Cyan", "White", "Green/Brown"],
-            "Range": ["0.4 to 1.0", "0.1 to 0.4", "0.0 to 0.1", "-0.5 to 0.0", "-1.0 to -0.5"],
-            "Feature": ["Deep Water", "Shallow Water", "Moist Soil", "Dry Land", "Vegetation"]
+            "Color Name": ["Dark Blue", "Light Blue", "White"],
+            "Range": ["0.3 to 1.0", "0.0 to 0.3", "-1.0 to 0.0"],
+            "Meaning": ["Deep Water", "Shallow Water", "Dry Land"]
         })
+    elif parameter == "MNDWI":
+        st.write("**Full Form:** Modified Normalized Difference Water Index")
+        st.info("Uses SWIR band to better distinguish water from urban buildings.")
     elif parameter == "NDSI":
+        st.write("**Full Form:** Normalized Difference Snow Index")
         st.table({
-            "Color Name": ["Bright White", "Light Grey", "Dark Grey", "Black"],
-            "Range": ["0.4 to 1.0", "0.1 to 0.4", "0.0 to 0.1", "-1.0 to 0.0"],
-            "Feature": ["Snow", "Ice/Glacial", "Clouds", "Land/Water"]
+            "Color Name": ["Bright White", "Grey", "Black"],
+            "Range": ["0.4 to 1.0", "0.1 to 0.4", "-1.0 to 0.1"],
+            "Meaning": ["Snow Cover", "Ice/Clouds", "Land/Water"]
         })
-    else:
-        st.info("Colors represent relative intensity from 1 (High) to -1 (Low).")
+    elif parameter == "EVI":
+        st.write("**Full Form:** Enhanced Vegetation Index")
+        st.info("Improves on NDVI by reducing atmospheric noise and soil background interference.")
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
