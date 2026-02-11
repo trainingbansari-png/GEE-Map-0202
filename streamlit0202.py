@@ -131,20 +131,28 @@ with st.sidebar:
     if st.session_state.probe_mode:
         st.info("Probe mode is activated! Click on the map to probe values.")
     else:
-        # Adjust CSS directly to change the cursor style based on probe mode
-        st.markdown(
-            """
+        # Include JavaScript to change cursor style when the probe mode is activated
+        st.components.v1.html("""
             <style>
                 .leaflet-container {
                     cursor: default;
                 }
-                .leaflet-container.probe-active {
+                .leaflet-container.pointer {
                     cursor: pointer;
                 }
             </style>
-            """,
-            unsafe_allow_html=True
-        )
+            <script>
+                const probeCheckbox = document.getElementById('probe_checkbox');
+                const map = document.querySelector('.leaflet-container');
+                probeCheckbox.addEventListener('change', () => {
+                    if (probeCheckbox.checked) {
+                        map.classList.add('pointer');
+                    } else {
+                        map.classList.remove('pointer');
+                    }
+                });
+            </script>
+        """)
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
