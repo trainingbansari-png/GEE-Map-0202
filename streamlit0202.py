@@ -152,7 +152,7 @@ with st.sidebar:
                     }
                 });
             </script>
-        """, height=0)
+        """)
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
@@ -172,15 +172,15 @@ Draw(draw_options={"rectangle": True, "polyline": False, "polygon": False, "circ
 # Handle map data from the user's click
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
-if map_data and map_data.get("last_active_drawing"):
-    # Get the coordinates of the last drawing
-    new_coords = map_data["last_active_drawing"]["geometry"]["coordinates"][0]
-    lons, lats = zip(*new_coords)
-    st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
-    st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
+# Probing functionality: Display values when probe mode is activated
+if st.session_state.probe_mode:
+    if map_data and map_data.get("last_active_drawing"):
+        # Get the coordinates of the last drawing
+        new_coords = map_data["last_active_drawing"]["geometry"]["coordinates"][0]
+        lons, lats = zip(*new_coords)
+        st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
+        st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
 
-    # Handle probing functionality only if probe mode is activated
-    if st.session_state.probe_mode:
         # Get the clicked location
         click_lat, click_lon = map_data["last_active_drawing"]["geometry"]["coordinates"][0][0]
         
