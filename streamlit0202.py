@@ -122,9 +122,16 @@ Draw(draw_options={"rectangle": True, "polyline": False, "polygon": False, "circ
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
 # Ensure display_collection is initialized before trying to use it
+roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, st.session_state.lr_lon, st.session_state.ul_lat])
+col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
+full_collection = ee.ImageCollection(col_id).filterBounds(roi).filterDate(str(start_date), str(end_date)).map(lambda img: mask_clouds(img, satellite))
+
+total_available = full_collection.size().getInfo()  # Total images in the collection
+display_collection = full_collection.sort("system:time_start").limit(30)
+display_count = display_collection.size().getInfo()
+
 if total_available > 0:
     # Adjust frame_idx to stay within bounds of the display collection
-    display_count = display_collection.size().getInfo()
     if st.session_state.frame_idx > display_count:
         st.session_state.frame_idx = display_count  # Ensure the frame index is valid
 
@@ -144,7 +151,7 @@ if total_available > 0:
         # Create a point at the clicked location
         point = ee.Geometry.Point(click_lon, click_lat)
 
-        # Get the value of the parameter at that point
+        # Get the value at the clicked point for the selected parameter
         value = processed_img.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=point,
