@@ -87,26 +87,44 @@ with st.sidebar:
     selected_palette = palettes[palette_choice]
 
     st.divider()
-    st.header("📖 Color Range Table")
-    if parameter == "NDVI":
-        st.table({"Range": ["0.8 to 1.0", "0.2 to 0.5", "0 to 0.1", "-1 to 0"], "Meaning": ["Forest", "Grass", "Soil", "Water"]})
+    st.header("📖 Color Interpretation Table")
+    
+    # DYNAMIC COLOR RANGE TABLE WITH NAMES
+    if parameter == "Level1":
+        st.write("🎨 **Natural Color:** Standard RGB view.")
+    elif parameter == "NDVI":
+        st.table([
+            {"Color Name": "Dark Green", "Range": "0.6 to 1.0", "Meaning": "Dense Forest"},
+            {"Color Name": "Light Green", "Range": "0.2 to 0.5", "Meaning": "Grass/Crops"},
+            {"Color Name": "Yellow/Tan", "Range": "0 to 0.1", "Meaning": "Soil/Urban"},
+            {"Color Name": "White/Blue", "Range": "-1 to 0", "Meaning": "Water/Snow"}
+        ])
     elif "NDWI" in parameter:
-        st.table({"Range": ["0.3 to 1.0", "0 to 0.2", "-1 to 0"], "Meaning": ["Water", "Humidity", "Dry Land"]})
+        st.table([
+            {"Color Name": "Dark Blue", "Range": "0.3 to 1.0", "Meaning": "Deep Water"},
+            {"Color Name": "Light Blue", "Range": "0 to 0.2", "Meaning": "Flooding/Moisture"},
+            {"Color Name": "White", "Range": "-1 to 0", "Meaning": "Dry Land"}
+        ])
+    elif parameter == "NDSI":
+        st.table([
+            {"Color Name": "Bright White", "Range": "0.4 to 1.0", "Meaning": "Snow/Ice"},
+            {"Color Name": "Grey/Dark", "Range": "-1 to 0.3", "Meaning": "No Snow"}
+        ])
     else:
-        st.info("Values closer to 1.0 show high intensity.")
+        st.info("Values near 1.0 indicate high intensity of selected index.")
 
 # ---------------- Main Map ----------------
 st.subheader("1. Area Selection")
 center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
 m = folium.Map(location=center, zoom_start=8)
 
-# Persistent Rectangle
+# Persistent ROI Rectangle
 folium.Rectangle(
     bounds=[[st.session_state.lr_lat, st.session_state.ul_lon], [st.session_state.ul_lat, st.session_state.lr_lon]],
-    color="red", fill=True, fill_opacity=0.1
+    color="red", weight=2, fill=True, fill_opacity=0.1
 ).add_to(m)
 
-Draw(draw_options={"rectangle":True}).add_to(m)
+Draw(draw_options={"rectangle":True, "polyline":False, "polygon":False, "circle":False, "marker":False}).add_to(m)
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
 if map_data and map_data["all_drawings"]:
@@ -144,7 +162,8 @@ if total_available > 0:
         idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
         img = ee.Image(display_collection.toList(display_count).get(idx-1))
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
-        st.write(f"📅 **Timestamp:** {timestamp}")
+        st.write(f"📅 **Acquisition Time:** {timestamp}")
+        
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
@@ -152,9 +171,9 @@ if total_available > 0:
 
     with c2:
         st.subheader("3. Export")
-        fps = st.slider("FPS", 1, 15, 5)
-        if st.button("🎬 Generate Timelapse"):
-            with st.spinner("Generating..."):
+        fps = st.slider("Playback FPS", 1, 15, 5)
+        if st.button("🎬 Generate Animated Timelapse"):
+            with st.spinner("Processing video..."):
                 video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
