@@ -1,6 +1,7 @@
 import streamlit as st
 import ee
 import folium
+import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
@@ -59,9 +60,6 @@ def apply_parameter(image, parameter, satellite):
     if parameter == "EVI":
         return image.expression('2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
             {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red']), 'BLUE': image.select(bm['blue'])}).rename(parameter)
-    if parameter == "SAVI":
-        return image.expression('((NIR - RED) * 1.5) / (NIR + RED + 0.5)',
-            {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red'])}).rename(parameter)
     return image
 
 # ---------------- Sidebar ----------------
@@ -74,10 +72,10 @@ with st.sidebar:
     st.session_state.ul_lat, st.session_state.ul_lon = u_lat, u_lon
     st.session_state.lr_lat, st.session_state.lr_lon = l_lat, l_lon
 
-    start_date = st.date_input("Start Date", date(2024, 1, 1))
-    end_date = st.date_input("End Date", date(2024, 12, 31))
+    start_date = st.date_input("Start Date", date(2025, 1, 1))
+    end_date = st.date_input("End Date", date(2025, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
-    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "NDSI", "EVI", "SAVI"])
+    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "NDSI", "EVI"])
     
     palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
     palettes = {
@@ -87,6 +85,20 @@ with st.sidebar:
         "No Color (Grayscale)": None 
     }
     selected_palette = palettes[palette_choice]
+
+    # --- COLOR RANGE TABLE ---
+    st.divider()
+    st.header("📖 Interpretation Guide")
+    if parameter == "NDVI":
+        st.table({"Color": ["Dark Green", "Light Green", "Yellow/Brown", "Blue/White"], 
+                  "Range": ["> 0.6", "0.2 - 0.5", "0 - 0.1", "< 0"], 
+                  "Feature": ["Forest", "Agriculture", "Bare Soil", "Water/Snow"]})
+    elif "NDWI" in parameter:
+        st.table({"Color": ["Deep Blue", "Light Blue", "White"], 
+                  "Range": ["> 0.3", "0 - 0.2", "< 0"], 
+                  "Feature": ["Open Water", "Moist Soil", "Dry Land"]})
+    else:
+        st.info("Values closer to 1.0 represent high intensity of the selected parameter.")
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
@@ -116,31 +128,38 @@ display_count = display_collection.size().getInfo()
 
 if total_available > 0:
     st.divider()
+    
+    # --- DATA TREND CALCULATION ---
+    if parameter != "Level1":
+        with st.spinner("Calculating Trend Chart..."):
+            def get_stats(img):
+                p_img = apply_parameter(img, parameter, satellite)
+                mean_dict = p_img.reduceRegion(reducer=ee.Reducer.mean(), geometry=roi, scale=30, maxPixels=1e9)
+                return img.set('mean_val', mean_dict.get(parameter)).set('date', img.date().format('YYYY-MM-DD'))
+
+            stats_col = display_collection.map(get_stats).getInfo()
+            chart_data = pd.DataFrame([{'Date': f['properties']['date'], 'Value': f['properties']['mean_val']} for f in stats_col['features']])
+            chart_data = chart_data.set_index('Date')
+            
+            st.subheader(f"📈 {parameter} Trend Over Time")
+            st.line_chart(chart_data)
+
     c1, c2 = st.columns([1, 1])
 
     with c1:
-        st.subheader("2. Visual Review & Live Calculation")
+        st.subheader("2. Visual Review")
         idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
         img = ee.Image(display_collection.toList(display_count).get(idx-1))
         processed_img = apply_parameter(img, parameter, satellite)
         
-        # --- LIVE AREA CALCULATION ---
-        if parameter != "Level1":
-            stats = processed_img.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=roi,
-                scale=30,
-                maxPixels=1e9
-            ).getInfo()
-            avg_val = stats.get(parameter, 0)
-            st.metric(label=f"Mean {parameter} for Selected Area", value=f"{avg_val:.4f}")
-        else:
-            st.info("Select an Index (like NDVI) to see area calculations.")
-
+        # Acquisition metadata
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
+        if parameter != "Level1":
+            current_mean = chart_data.iloc[idx-1]['Value']
+            st.metric(label=f"Current Frame Mean {parameter}", value=f"{current_mean:.4f}")
+        
         st.caption(f"📅 **Time:** {timestamp}")
 
-        # Visualization
         vis = {"min": -1, "max": 1}
         if parameter == "Level1":
             bm = get_band_map(satellite)
@@ -156,7 +175,7 @@ if total_available > 0:
         st.subheader("3. Export")
         fps = st.slider("Speed (FPS)", 1, 15, 5)
         if st.button("🎬 Generate Timelapse"):
-            with st.spinner("Processing..."):
+            with st.spinner("Generating Video..."):
                 video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
