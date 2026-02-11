@@ -72,8 +72,8 @@ with st.sidebar:
     st.session_state.ul_lat, st.session_state.ul_lon = u_lat, u_lon
     st.session_state.lr_lat, st.session_state.lr_lon = l_lat, l_lon
 
-    start_date = st.date_input("Start Date", date(2025, 1, 1))
-    end_date = st.date_input("End Date", date(2025, 12, 31))
+    start_date = st.date_input("Start Date", date(2024, 1, 1))
+    end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
     parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "NDSI", "EVI"])
     
@@ -86,7 +86,6 @@ with st.sidebar:
     }
     selected_palette = palettes[palette_choice]
 
-    # --- COLOR RANGE TABLE ---
     st.divider()
     st.header("📖 Interpretation Guide")
     if parameter == "NDVI":
@@ -97,8 +96,6 @@ with st.sidebar:
         st.table({"Color": ["Deep Blue", "Light Blue", "White"], 
                   "Range": ["> 0.3", "0 - 0.2", "< 0"], 
                   "Feature": ["Open Water", "Moist Soil", "Dry Land"]})
-    else:
-        st.info("Values closer to 1.0 represent high intensity of the selected parameter.")
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
@@ -129,34 +126,48 @@ display_count = display_collection.size().getInfo()
 if total_available > 0:
     st.divider()
     
-    # --- DATA TREND CALCULATION ---
+    # --- FIXED DATA TREND CALCULATION ---
+    chart_data = pd.DataFrame()
     if parameter != "Level1":
-        with st.spinner("Calculating Trend Chart..."):
+        with st.spinner("Calculating Trend..."):
             def get_stats(img):
                 p_img = apply_parameter(img, parameter, satellite)
                 mean_dict = p_img.reduceRegion(reducer=ee.Reducer.mean(), geometry=roi, scale=30, maxPixels=1e9)
+                # Safely return None if the value is missing
                 return img.set('mean_val', mean_dict.get(parameter)).set('date', img.date().format('YYYY-MM-DD'))
 
-            stats_col = display_collection.map(get_stats).getInfo()
-            chart_data = pd.DataFrame([{'Date': f['properties']['date'], 'Value': f['properties']['mean_val']} for f in stats_col['features']])
-            chart_data = chart_data.set_index('Date')
+            stats_list = display_collection.map(get_stats).getInfo()['features']
             
-            st.subheader(f"📈 {parameter} Trend Over Time")
-            st.line_chart(chart_data)
+            # Extract data only if mean_val exists to avoid KeyError
+            rows = []
+            for f in stats_list:
+                val = f['properties'].get('mean_val')
+                if val is not None:
+                    rows.append({'Date': f['properties']['date'], 'Value': val})
+            
+            if rows:
+                chart_data = pd.DataFrame(rows).set_index('Date')
+                st.subheader(f"📈 {parameter} Trend")
+                st.line_chart(chart_data)
+            else:
+                st.warning("Could not calculate trend. Area might be obscured by clouds.")
 
     c1, c2 = st.columns([1, 1])
 
     with c1:
-        st.subheader("2. Visual Review")
+        st.subheader("2. Review")
         idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
+        st.session_state.frame_idx = idx
         img = ee.Image(display_collection.toList(display_count).get(idx-1))
         processed_img = apply_parameter(img, parameter, satellite)
         
-        # Acquisition metadata
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
-        if parameter != "Level1":
-            current_mean = chart_data.iloc[idx-1]['Value']
-            st.metric(label=f"Current Frame Mean {parameter}", value=f"{current_mean:.4f}")
+        
+        # Display Metric safely
+        if not chart_data.empty:
+            current_date = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD").getInfo()
+            if current_date in chart_data.index:
+                st.metric(f"Mean {parameter}", f"{chart_data.loc[current_date, 'Value']:.4f}")
         
         st.caption(f"📅 **Time:** {timestamp}")
 
