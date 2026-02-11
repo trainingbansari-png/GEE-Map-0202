@@ -80,36 +80,36 @@ with st.sidebar:
     palette_choice = st.selectbox("Color Theme", ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"])
     palettes = {
         "Vegetation (Green)": ['#ffffff', '#ce7e45', '#fcd163', '#66a000', '#056201', '#011301'],
-        "Water (Blue)": ['#ffffd9', '#7fcdbb', '#41b6c4', '#1d91c0', '#0c2c84'],
-        "Thermal (Red)": ['#ffffff', '#fc9272', '#ef3b2c', '#a50f15', '#67000d'],
+        "Water (Blue)": ['#ffffd9', '#7fcdbb', '#41b6c4', '#1d91c0', '#225ea8', '#0c2c84'],
+        "Thermal (Red)": ['#ffffff', '#fc9272', '#ef3b2c', '#cb181d', '#a50f15', '#67000d'],
         "No Color (Grayscale)": None 
     }
     selected_palette = palettes[palette_choice]
 
-    # --- UPDATED FULL RANGE INTERPRETATION TABLE ---
+    # --- UPDATED FULL RANGE INTERPRETATION TABLE WITH COLOR NAMES ---
     st.divider()
-    st.header("📖 Full Range Guide (1 to -1)")
+    st.header("📖 Color Range Guide (1 to -1)")
     
     if parameter == "NDVI":
         st.table({
-            "Range Value": ["0.6 to 1.0", "0.2 to 0.6", "0.0 to 0.2", "-0.1 to 0.0", "-1.0 to -0.1"],
-            "Description": ["Dense Vegetation", "Shrubs/Crops", "Soil/Urban", "Barren/Sand", "Water/Snow"]
+            "Color Name": ["Dark Green", "Light Green", "Yellow/Brown", "White", "Blue"],
+            "Range": ["0.6 to 1.0", "0.2 to 0.6", "0.0 to 0.2", "-0.1 to 0.0", "-1.0 to -0.1"],
+            "Feature": ["Forest", "Crops", "Soil", "Snow/Sand", "Water"]
         })
     elif "NDWI" in parameter or "MNDWI" in parameter:
         st.table({
-            "Range Value": ["0.4 to 1.0", "0.1 to 0.4", "0.0 to 0.1", "-0.5 to 0.0", "-1.0 to -0.5"],
-            "Description": ["Deep Water", "Shallow Water", "Moist Soil", "Dry Land", "Dense Vegetation"]
+            "Color Name": ["Dark Blue", "Light Blue", "Cyan", "White", "Green/Brown"],
+            "Range": ["0.4 to 1.0", "0.1 to 0.4", "0.0 to 0.1", "-0.5 to 0.0", "-1.0 to -0.5"],
+            "Feature": ["Deep Water", "Shallow Water", "Moist Soil", "Dry Land", "Vegetation"]
         })
     elif parameter == "NDSI":
         st.table({
-            "Range Value": ["0.4 to 1.0", "0.1 to 0.4", "0.0 to 0.1", "-1.0 to 0.0"],
-            "Description": ["Snow Cover", "Mixed Ice", "Clouds", "Water/Land"]
+            "Color Name": ["Bright White", "Light Grey", "Dark Grey", "Black"],
+            "Range": ["0.4 to 1.0", "0.1 to 0.4", "0.0 to 0.1", "-1.0 to 0.0"],
+            "Feature": ["Snow", "Ice/Glacial", "Clouds", "Land/Water"]
         })
     else:
-        st.table({
-            "Range Value": ["0.5 to 1.0", "0.0 to 0.5", "-0.5 to 0.0", "-1.0 to -0.5"],
-            "Description": ["High Intensity", "Moderate", "Low Intensity", "Inverted/Noise"]
-        })
+        st.info("Colors represent relative intensity from 1 (High) to -1 (Low).")
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
