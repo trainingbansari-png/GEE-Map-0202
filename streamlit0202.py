@@ -131,28 +131,20 @@ with st.sidebar:
     if st.session_state.probe_mode:
         st.info("Probe mode is activated! Click on the map to probe values.")
     else:
-        # Include JavaScript to change cursor style when the probe mode is activated
-        st.components.v1.html("""
+        # Adjust CSS directly to change the cursor style based on probe mode
+        st.markdown(
+            """
             <style>
                 .leaflet-container {
                     cursor: default;
                 }
-                .leaflet-container.pointer {
+                .leaflet-container.probe-active {
                     cursor: pointer;
                 }
             </style>
-            <script>
-                const probeCheckbox = document.getElementById('probe_checkbox');
-                const map = document.querySelector('.leaflet-container');
-                probeCheckbox.addEventListener('change', () => {
-                    if (probeCheckbox.checked) {
-                        map.classList.add('pointer');
-                    } else {
-                        map.classList.remove('pointer');
-                    }
-                });
-            </script>
-        """, height=0)
+            """,
+            unsafe_allow_html=True
+        )
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
@@ -172,15 +164,15 @@ Draw(draw_options={"rectangle": True, "polyline": False, "polygon": False, "circ
 # Handle map data from the user's click
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
-if map_data and map_data.get("last_active_drawing"):
-    # Get the coordinates of the last drawing
-    new_coords = map_data["last_active_drawing"]["geometry"]["coordinates"][0]
-    lons, lats = zip(*new_coords)
-    st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
-    st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
+# Probing functionality: Display values when probe mode is activated
+if st.session_state.probe_mode:
+    if map_data and map_data.get("last_active_drawing"):
+        # Get the coordinates of the last drawing
+        new_coords = map_data["last_active_drawing"]["geometry"]["coordinates"][0]
+        lons, lats = zip(*new_coords)
+        st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
+        st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
 
-    # Handle probing functionality only if probe mode is activated
-    if st.session_state.probe_mode:
         # Get the clicked location
         click_lat, click_lon = map_data["last_active_drawing"]["geometry"]["coordinates"][0][0]
         
@@ -206,68 +198,3 @@ if map_data and map_data.get("last_active_drawing"):
             st.metric(label=f"Mean {parameter}", value=f"{value.get(parameter, 'N/A'):.4f}")
         else:
             st.warning("Please click on a valid image area.")
-
-# ---------------- Processing ----------------
-roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, st.session_state.lr_lon, st.session_state.ul_lat])
-col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
-full_collection = ee.ImageCollection(col_id).filterBounds(roi).filterDate(str(start_date), str(end_date)).map(lambda img: mask_clouds(img, satellite))
-
-total_available = full_collection.size().getInfo()
-display_collection = full_collection.sort("system:time_start").limit(30)
-display_count = display_collection.size().getInfo()
-
-if total_available > 0:
-    st.divider()
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Archive Images", total_available)
-    m2.metric("Preview Frames", display_count)
-    m3.metric("Sensor", satellite)
-
-    c1, c2 = st.columns([1, 1])
-
-    with c1:
-        st.subheader("2. Review & Stats")
-        idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
-        st.session_state.frame_idx = idx
-        img = ee.Image(display_collection.toList(display_count).get(idx-1))
-        processed_img = apply_parameter(img, parameter, satellite)
-        
-        if parameter != "Level1":
-            with st.spinner("Calculating mean..."):
-                mean_dict = processed_img.reduceRegion(
-                    reducer=ee.Reducer.mean(),
-                    geometry=roi,
-                    scale=30,
-                    maxPixels=1e9
-                ).getInfo()
-                val = mean_dict.get(parameter)
-                if val is not None:
-                    st.metric(label=f"Mean {parameter}", value=f"{val:.4f}")
-
-        timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
-        st.caption(f"📅 **Time:** {timestamp}")
-
-        vis = {"min": -1, "max": 1}
-        if parameter == "Level1":
-            bm = get_band_map(satellite)
-            max_val = 3000 if "Sentinel" in satellite else 15000
-            vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": max_val}
-        elif selected_palette: 
-            vis["palette"] = selected_palette
-        
-        map_id = processed_img.clip(roi).getMapId(vis)
-        f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
-        folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
-
-    with c2:
-        st.subheader("3. Export")
-        fps = st.slider("Speed (FPS)", 1, 15, 5)
-        if st.button("🎬 Generate Animated Timelapse"):
-            with st.spinner("Generating..."):
-                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
-                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
-                st.image(video_url, caption=f"Timelapse: {parameter}")
-                st.markdown(f"### [📥 Download Result]({video_url})")
-else:
-    st.warning("No images found. Adjust your settings.")
