@@ -126,24 +126,57 @@ with st.sidebar:
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
-center_lat = (st.session_state.ul_lat + st.session_state.lr_lat)/2
-center_lon = (st.session_state.ul_lon + st.session_state.lr_lon)/2
+center_lat = (st.session_state.ul_lat + st.session_state.lr_lat) / 2
+center_lon = (st.session_state.ul_lon + st.session_state.lr_lon) / 2
 m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
 
-folium.Rectangle(bounds=[[st.session_state.lr_lat, st.session_state.ul_lon], [st.session_state.ul_lat, st.session_state.lr_lon]],
-                 color="red", weight=2, fill=True, fill_opacity=0.1).add_to(m)
+# Drawing a rectangle for ROI
+folium.Rectangle(
+    bounds=[[st.session_state.lr_lat, st.session_state.ul_lon], [st.session_state.ul_lat, st.session_state.lr_lon]],
+    color="red", weight=2, fill=True, fill_opacity=0.1
+).add_to(m)
 
-Draw(draw_options={"rectangle":True, "polyline":False, "polygon":False, "circle":False, "marker":False}).add_to(m)
+# Adding Draw feature to the map
+Draw(draw_options={"rectangle": True, "polyline": False, "polygon": False, "circle": False, "marker": False}).add_to(m)
+
+# Handle map data from the user's click
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
-if map_data and map_data["all_drawings"]:
-    new_coords = map_data["all_drawings"][-1]["geometry"]["coordinates"][0]
+if map_data and map_data.get("last_active_drawing"):
+    # Get the coordinates of the last drawing
+    new_coords = map_data["last_active_drawing"]["geometry"]["coordinates"][0]
     lons, lats = zip(*new_coords)
     st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
     st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
-    st.rerun()
 
-# Processing
+    # --- Probing the clicked area ---
+    # Get the clicked location
+    click_lat, click_lon = map_data["last_active_drawing"]["geometry"]["coordinates"][0][0]
+    
+    # Create a point at the clicked location
+    point = ee.Geometry.Point(click_lon, click_lat)
+
+    # Get the image at the selected location
+    img = ee.Image(display_collection.toList(display_count).get(st.session_state.frame_idx - 1))
+
+    # Apply the selected parameter to the image
+    processed_img = apply_parameter(img, parameter, satellite)
+    
+    # Get the value of the parameter at the clicked location
+    value = processed_img.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=point,
+        scale=30,
+        maxPixels=1e9
+    ).getInfo()
+
+    if value:
+        st.subheader(f"📍 Probed Area: ({click_lat:.4f}, {click_lon:.4f})")
+        st.metric(label=f"Mean {parameter}", value=f"{value.get(parameter, 'N/A'):.4f}")
+    else:
+        st.warning("No value found for the selected location.")
+
+# ---------------- Processing ----------------
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, st.session_state.lr_lon, st.session_state.ul_lat])
 col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
 full_collection = ee.ImageCollection(col_id).filterBounds(roi).filterDate(str(start_date), str(end_date)).map(lambda img: mask_clouds(img, satellite))
