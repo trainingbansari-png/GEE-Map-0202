@@ -97,9 +97,9 @@ with st.sidebar:
     }
     selected_palette = palettes[palette_choice]
 
-    # Activate probe mode
-    probe_mode = st.button("Activate Probe Mode")
-    if probe_mode:
+    # --- Probe Mode Activation ---
+    probe_button = st.button("Activate Probe Mode")
+    if probe_button:
         st.session_state.probe_mode = not st.session_state.probe_mode
         st.sidebar.success(f"Probe Mode {'Activated' if st.session_state.probe_mode else 'Deactivated'}")
 
@@ -141,17 +141,16 @@ if total_available > 0:
     # Apply the selected parameter to the image
     processed_img = apply_parameter(img, parameter, satellite)
 
-    # Get the value of the parameter at the clicked location
+    # If Probe Mode is Activated, allow probing the image
     if st.session_state.probe_mode and map_data and map_data.get("last_active_drawing"):
-        # Get the coordinates of the last drawing (click)
         new_coords = map_data["last_active_drawing"]["geometry"]["coordinates"][0]
         lons, lats = zip(*new_coords)
-        click_lat, click_lon = lats[0], lons[0]
+        point_lat, point_lon = lats[0], lons[0]
 
-        # Create a point at the clicked location
-        point = ee.Geometry.Point(click_lon, click_lat)
+        # Create a point for the clicked location
+        point = ee.Geometry.Point(point_lon, point_lat)
 
-        # Get the value at the clicked point for the selected parameter
+        # Get the value of the parameter at the clicked location
         value = processed_img.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=point,
@@ -160,16 +159,24 @@ if total_available > 0:
         ).getInfo()
 
         if value:
-            # Safely get the parameter value
-            parameter_value = value.get(parameter, 'N/A')  # Default to 'N/A' if parameter doesn't exist in the result
-
-            # If the value is 'N/A', display a warning
-            if parameter_value == 'N/A':
-                st.warning(f"No value found for the selected parameter: {parameter}")
-            else:
-                st.subheader(f"📍 Probed Area: ({click_lat:.4f}, {click_lon:.4f})")
-                st.metric(label=f"Mean {parameter}", value=f"{parameter_value:.4f}")
+            st.subheader(f"📍 Probed Area: ({point_lat:.4f}, {point_lon:.4f})")
+            st.metric(label=f"Mean {parameter}", value=f"{value.get(parameter, 'N/A'):.4f}")
         else:
             st.warning("No value found for the selected location.")
+    
+    # Visualize the image
+    vis = {"min": -1, "max": 1}
+    if parameter == "Level1":
+        bm = get_band_map(satellite)
+        max_val = 3000 if "Sentinel" in satellite else 15000
+        vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": max_val}
+    elif selected_palette:
+        vis["palette"] = selected_palette
+
+    map_id = processed_img.clip(roi).getMapId(vis)
+    f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
+    folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
+    st_folium(f_map, height=400, width="100%", key=f"rev_{st.session_state.frame_idx}_{parameter}_{palette_choice}")
+
 else:
     st.warning("No images found. Adjust your settings.")
