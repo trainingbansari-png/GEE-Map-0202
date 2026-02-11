@@ -50,10 +50,18 @@ def mask_clouds(image, satellite):
 def apply_parameter(image, parameter, satellite):
     bm = get_band_map(satellite)
     if parameter == "Level1": return image
-    if parameter == "NDVI": return image.normalizedDifference([bm['nir'], bm['red']]).rename(parameter)
-    if parameter == "NDWI": return image.normalizedDifference([bm['green'], bm['nir']]).rename(parameter)
-    if parameter == "MNDWI": return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
-    if parameter == "NDSI": return image.normalizedDifference([bm['green'], bm['swir1']]).rename(parameter)
+    
+    # Normalized Difference Indices
+    if parameter in ["NDVI", "NDWI", "MNDWI", "NDSI"]:
+        pairs = {
+            "NDVI": [bm['nir'], bm['red']],
+            "NDWI": [bm['green'], bm['nir']],
+            "MNDWI": [bm['green'], bm['swir1']],
+            "NDSI": [bm['green'], bm['swir1']]
+        }
+        return image.normalizedDifference(pairs[parameter]).rename(parameter)
+    
+    # Expression-based Indices
     if parameter == "EVI":
         return image.expression('2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
             {'NIR': image.select(bm['nir']), 'RED': image.select(bm['red']), 'BLUE': image.select(bm['blue'])}).rename(parameter)
@@ -64,7 +72,7 @@ def apply_parameter(image, parameter, satellite):
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
-    st.header("📍 ROI & Configuration")
+    st.header("📍 ROI & Config")
     u_lat = st.number_input("Upper Lat", value=float(st.session_state.ul_lat), format="%.4f")
     u_lon = st.number_input("Left Lon", value=float(st.session_state.ul_lon), format="%.4f")
     l_lat = st.number_input("Lower Lat", value=float(st.session_state.lr_lat), format="%.4f")
@@ -87,38 +95,24 @@ with st.sidebar:
     selected_palette = palettes[palette_choice]
 
     st.divider()
-    st.header("📖 Color Interpretation Table")
-    
-    # DYNAMIC COLOR RANGE TABLE WITH NAMES
-    if parameter == "Level1":
-        st.write("🎨 **Natural Color:** Standard RGB view.")
-    elif parameter == "NDVI":
-        st.table([
-            {"Color Name": "Dark Green", "Range": "0.6 to 1.0", "Meaning": "Dense Forest"},
-            {"Color Name": "Light Green", "Range": "0.2 to 0.5", "Meaning": "Grass/Crops"},
-            {"Color Name": "Yellow/Tan", "Range": "0 to 0.1", "Meaning": "Soil/Urban"},
-            {"Color Name": "White/Blue", "Range": "-1 to 0", "Meaning": "Water/Snow"}
-        ])
-    elif "NDWI" in parameter:
-        st.table([
-            {"Color Name": "Dark Blue", "Range": "0.3 to 1.0", "Meaning": "Deep Water"},
-            {"Color Name": "Light Blue", "Range": "0 to 0.2", "Meaning": "Flooding/Moisture"},
-            {"Color Name": "White", "Range": "-1 to 0", "Meaning": "Dry Land"}
-        ])
-    elif parameter == "NDSI":
-        st.table([
-            {"Color Name": "Bright White", "Range": "0.4 to 1.0", "Meaning": "Snow/Ice"},
-            {"Color Name": "Grey/Dark", "Range": "-1 to 0.3", "Meaning": "No Snow"}
-        ])
-    else:
-        st.info("Values near 1.0 indicate high intensity of selected index.")
+    st.header("📖 Value Reference")
+    # Comprehensive Scientific Table
+    ref_data = {
+        "NDVI": {"High": "Forest (>0.6)", "Low": "Water (<0)"},
+        "NDWI": {"High": "Deep Water (>0.3)", "Low": "Dry Land (<0)"},
+        "NDSI": {"High": "Snow (>0.4)", "Low": "Soil/Rock (<0.4)"},
+        "EVI": {"High": "Dense Biomass", "Low": "Soil"},
+    }
+    if parameter in ref_data:
+        st.write(f"**{parameter} Key:**")
+        st.table(ref_data[parameter])
 
-# ---------------- Main Map ----------------
+# ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
 center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
 m = folium.Map(location=center, zoom_start=8)
 
-# Persistent ROI Rectangle
+# Show current ROI
 folium.Rectangle(
     bounds=[[st.session_state.lr_lat, st.session_state.ul_lon], [st.session_state.ul_lat, st.session_state.lr_lon]],
     color="red", weight=2, fill=True, fill_opacity=0.1
@@ -134,7 +128,7 @@ if map_data and map_data["all_drawings"]:
     st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
     st.rerun()
 
-# ---------------- Results ----------------
+# Processing
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, st.session_state.lr_lon, st.session_state.ul_lat])
 col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
 full_collection = ee.ImageCollection(col_id).filterBounds(roi).filterDate(str(start_date), str(end_date)).map(lambda img: mask_clouds(img, satellite))
@@ -146,9 +140,9 @@ display_count = display_collection.size().getInfo()
 if total_available > 0:
     st.divider()
     m1, m2, m3 = st.columns(3)
-    m1.metric("Total Archive Images", total_available)
+    m1.metric("Total Images", total_available)
     m2.metric("Preview Frames", display_count)
-    m3.metric("Selected Index", parameter)
+    m3.metric("Sensor", satellite)
 
     c1, c2 = st.columns([1, 1])
     vis = {"min": -1, "max": 1}
@@ -158,11 +152,11 @@ if total_available > 0:
     elif selected_palette: vis["palette"] = selected_palette
 
     with c1:
-        st.subheader("2. Visual Review")
+        st.subheader("2. Review")
         idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
         img = ee.Image(display_collection.toList(display_count).get(idx-1))
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
-        st.write(f"📅 **Acquisition Time:** {timestamp}")
+        st.caption(f"📅 **Time:** {timestamp}")
         
         map_id = apply_parameter(img, parameter, satellite).clip(roi).getMapId(vis)
         f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
@@ -171,9 +165,9 @@ if total_available > 0:
 
     with c2:
         st.subheader("3. Export")
-        fps = st.slider("Playback FPS", 1, 15, 5)
-        if st.button("🎬 Generate Animated Timelapse"):
-            with st.spinner("Processing video..."):
+        fps = st.slider("Speed (FPS)", 1, 15, 5)
+        if st.button("🎬 Generate Timelapse"):
+            with st.spinner("Processing..."):
                 video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
