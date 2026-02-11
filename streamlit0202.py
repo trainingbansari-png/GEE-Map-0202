@@ -160,8 +160,15 @@ if total_available > 0:
         ).getInfo()
 
         if value:
-            st.subheader(f"📍 Probed Area: ({click_lat:.4f}, {click_lon:.4f})")
-            st.metric(label=f"Mean {parameter}", value=f"{value.get(parameter, 'N/A'):.4f}")
+            # Safely get the parameter value
+            parameter_value = value.get(parameter, 'N/A')  # Default to 'N/A' if parameter doesn't exist in the result
+
+            # If the value is 'N/A', display a warning
+            if parameter_value == 'N/A':
+                st.warning(f"No value found for the selected parameter: {parameter}")
+            else:
+                st.subheader(f"📍 Probed Area: ({click_lat:.4f}, {click_lon:.4f})")
+                st.metric(label=f"Mean {parameter}", value=f"{parameter_value:.4f}")
         else:
             st.warning("No value found for the selected location.")
 else:
