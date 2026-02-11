@@ -13,7 +13,7 @@ if "ul_lon" not in st.session_state: st.session_state.ul_lon = 69.5
 if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
 if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
 if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
-if "probe_mode" not in st.session_state: st.session_state.probe_mode = False
+if "probe_mode" not in st.session_state: st.session_state.probe_mode = False  # Probe mode state
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -98,8 +98,32 @@ with st.sidebar:
     }
     selected_palette = palettes[palette_choice]
 
-    # Probe mode toggle
-    st.session_state.probe_mode = st.checkbox("Enable Probe Mode", value=False)
+    # --- FULL FORM & RANGE GUIDE TABLE ---
+    st.divider()
+    st.header("📖 Color Range Table")
+    
+    if parameter == "NDVI":
+        st.table({
+            "Color Name": ["Dark Green", "Light Green", "Yellow/Brown", "Blue"],
+            "Range": ["0.6 to 1.0", "0.2 to 0.6", "0.0 to 0.2", "-1.0 to -0.1"],
+            "Meaning": ["Forest", "Crops/Grass", "Soil/Urban", "Water/Snow"]
+        })
+    elif parameter == "NDWI":
+        st.table({
+            "Color Name": ["Dark Blue", "Light Blue", "White"],
+            "Range": ["0.3 to 1.0", "0.0 to 0.3", "-1.0 to 0.0"],
+            "Meaning": ["Deep Water", "Shallow Water", "Dry Land"]
+        })
+    elif parameter == "MNDWI":
+        st.info("Uses SWIR band to better distinguish water from urban buildings.")
+    elif parameter == "NDSI":
+        st.table({
+            "Color Name": ["Bright White", "Grey", "Black"],
+            "Range": ["0.4 to 1.0", "0.1 to 0.4", "-1.0 to 0.1"],
+            "Meaning": ["Snow Cover", "Ice/Clouds", "Land/Water"]
+        })
+    elif parameter == "EVI":
+        st.info("Improves on NDVI by reducing atmospheric noise and soil background interference.")
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
@@ -119,41 +143,40 @@ Draw(draw_options={"rectangle": True, "polyline": False, "polygon": False, "circ
 # Handle map data from the user's click
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
-# Check if user clicked on the map and enable probe mode
-if st.session_state.probe_mode and map_data and map_data.get("last_active_drawing"):
+if map_data and map_data.get("last_active_drawing"):
     # Get the coordinates of the last drawing
     new_coords = map_data["last_active_drawing"]["geometry"]["coordinates"][0]
     lons, lats = zip(*new_coords)
-    point_lat, point_lon = lats[0], lons[0]
+    st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
+    st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
 
-    # Create a point for the clicked location
-    point = ee.Geometry.Point(point_lon, point_lat)
+    # --- Probing the clicked area ---
+    if st.session_state.probe_mode:  # Only probe if probe_mode is active
+        # Get the clicked location
+        click_lat, click_lon = map_data["last_active_drawing"]["geometry"]["coordinates"][0][0]
+        
+        # Create a point at the clicked location
+        point = ee.Geometry.Point(click_lon, click_lat)
 
-    # Get the image at the selected location
-    img = ee.Image(display_collection.toList(display_count).get(st.session_state.frame_idx - 1))
+        # Get the image at the selected location
+        img = ee.Image(display_collection.toList(display_count).get(st.session_state.frame_idx - 1))
 
-    # Apply the selected parameter to the image
-    processed_img = apply_parameter(img, parameter, satellite)
-    
-    # Get the value of the parameter at the clicked location
-    value = processed_img.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=point,
-        scale=30,
-        maxPixels=1e9
-    ).getInfo()
+        # Apply the selected parameter to the image
+        processed_img = apply_parameter(img, parameter, satellite)
+        
+        # Get the value of the parameter at the clicked location
+        value = processed_img.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=point,
+            scale=30,
+            maxPixels=1e9
+        ).getInfo()
 
-    if value:
-        # Safely get the parameter value, defaulting to 'N/A' if not available
-        parameter_value = value.get(parameter, 'N/A')
-
-        if parameter_value == 'N/A':
-            st.warning(f"No value found for the selected parameter: {parameter}")
+        if value:
+            st.subheader(f"📍 Probed Area: ({click_lat:.4f}, {click_lon:.4f})")
+            st.metric(label=f"Mean {parameter}", value=f"{value.get(parameter, 'N/A'):.4f}")
         else:
-            st.subheader(f"📍 Probed Area: ({point_lat:.4f}, {point_lon:.4f})")
-            st.metric(label=f"Mean {parameter}", value=f"{parameter_value:.4f}")
-    else:
-        st.warning("No value found for the selected location.")
+            st.warning("No value found for the selected location.")
 
 # ---------------- Processing ----------------
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, st.session_state.lr_lon, st.session_state.ul_lat])
@@ -161,10 +184,12 @@ col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC0
 full_collection = ee.ImageCollection(col_id).filterBounds(roi).filterDate(str(start_date), str(end_date)).map(lambda img: mask_clouds(img, satellite))
 
 total_available = full_collection.size().getInfo()
-display_collection = full_collection.sort("system:time_start").limit(30)
-display_count = display_collection.size().getInfo()
 
+# Safeguard for when there are no images in the collection
 if total_available > 0:
+    display_collection = full_collection.sort("system:time_start").limit(30)
+    display_count = display_collection.size().getInfo()
+
     st.divider()
     m1, m2, m3 = st.columns(3)
     m1.metric("Archive Images", total_available)
@@ -177,36 +202,39 @@ if total_available > 0:
         st.subheader("2. Review & Stats")
         idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
         st.session_state.frame_idx = idx
-        img = ee.Image(display_collection.toList(display_count).get(idx-1))
-        processed_img = apply_parameter(img, parameter, satellite)
-        
-        if parameter != "Level1":
-            with st.spinner("Calculating mean..."):
-                mean_dict = processed_img.reduceRegion(
-                    reducer=ee.Reducer.mean(),
-                    geometry=roi,
-                    scale=30,
-                    maxPixels=1e9
-                ).getInfo()
-                val = mean_dict.get(parameter)
-                if val is not None:
-                    st.metric(label=f"Mean {parameter}", value=f"{val:.4f}")
 
-        timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
-        st.caption(f"📅 **Time:** {timestamp}")
+        # Ensure index is valid before accessing the image
+        if idx <= display_count:
+            img = ee.Image(display_collection.toList(display_count).get(idx - 1))
+            processed_img = apply_parameter(img, parameter, satellite)
 
-        vis = {"min": -1, "max": 1}
-        if parameter == "Level1":
-            bm = get_band_map(satellite)
-            max_val = 3000 if "Sentinel" in satellite else 15000
-            vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": max_val}
-        elif selected_palette: 
-            vis["palette"] = selected_palette
-        
-        map_id = processed_img.clip(roi).getMapId(vis)
-        f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
-        folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
+            if parameter != "Level1":
+                with st.spinner("Calculating mean..."):
+                    mean_dict = processed_img.reduceRegion(
+                        reducer=ee.Reducer.mean(),
+                        geometry=roi,
+                        scale=30,
+                        maxPixels=1e9
+                    ).getInfo()
+                    val = mean_dict.get(parameter)
+                    if val is not None:
+                        st.metric(label=f"Mean {parameter}", value=f"{val:.4f}")
+
+            timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
+            st.caption(f"📅 **Time:** {timestamp}")
+
+            vis = {"min": -1, "max": 1}
+            if parameter == "Level1":
+                bm = get_band_map(satellite)
+                max_val = 3000 if "Sentinel" in satellite else 15000
+                vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": max_val}
+            elif selected_palette: 
+                vis["palette"] = selected_palette
+
+            map_id = processed_img.clip(roi).getMapId(vis)
+            f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
+            folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
+            st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
     with c2:
         st.subheader("3. Export")
