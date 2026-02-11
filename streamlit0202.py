@@ -99,8 +99,10 @@ with st.sidebar:
 
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
-center = [(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2]
-m = folium.Map(location=center, zoom_start=8)
+center_lat = (st.session_state.ul_lat + st.session_state.lr_lat)/2
+center_lon = (st.session_state.ul_lon + st.session_state.lr_lon)/2
+m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
+
 folium.Rectangle(bounds=[[st.session_state.lr_lat, st.session_state.ul_lon], [st.session_state.ul_lat, st.session_state.lr_lon]],
                  color="red", weight=2, fill=True, fill_opacity=0.1).add_to(m)
 
@@ -126,66 +128,56 @@ display_count = display_collection.size().getInfo()
 if total_available > 0:
     st.divider()
     
-    # --- FIXED DATA TREND CALCULATION ---
-    chart_data = pd.DataFrame()
-    if parameter != "Level1":
-        with st.spinner("Calculating Trend..."):
-            def get_stats(img):
-                p_img = apply_parameter(img, parameter, satellite)
-                mean_dict = p_img.reduceRegion(reducer=ee.Reducer.mean(), geometry=roi, scale=30, maxPixels=1e9)
-                # Safely return None if the value is missing
-                return img.set('mean_val', mean_dict.get(parameter)).set('date', img.date().format('YYYY-MM-DD'))
-
-            stats_list = display_collection.map(get_stats).getInfo()['features']
-            
-            # Extract data only if mean_val exists to avoid KeyError
-            rows = []
-            for f in stats_list:
-                val = f['properties'].get('mean_val')
-                if val is not None:
-                    rows.append({'Date': f['properties']['date'], 'Value': val})
-            
-            if rows:
-                chart_data = pd.DataFrame(rows).set_index('Date')
-                st.subheader(f"📈 {parameter} Trend")
-                st.line_chart(chart_data)
-            else:
-                st.warning("Could not calculate trend. Area might be obscured by clouds.")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Archive Images", total_available)
+    m2.metric("Preview Frames", display_count)
+    m3.metric("Current Sensor", satellite)
 
     c1, c2 = st.columns([1, 1])
 
     with c1:
-        st.subheader("2. Review")
+        st.subheader("2. Visual Review & Area Calculation")
         idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
         st.session_state.frame_idx = idx
         img = ee.Image(display_collection.toList(display_count).get(idx-1))
         processed_img = apply_parameter(img, parameter, satellite)
         
+        # --- CALCULATION LOGIC ---
+        if parameter != "Level1":
+            with st.spinner("Calculating mean..."):
+                mean_dict = processed_img.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=roi,
+                    scale=30,
+                    maxPixels=1e9
+                ).getInfo()
+                
+                val = mean_dict.get(parameter)
+                if val is not None:
+                    st.metric(label=f"Mean {parameter} for ROI", value=f"{val:.4f}")
+                else:
+                    st.warning("Calculation returned no data (possibly cloud-masked).")
+
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
-        
-        # Display Metric safely
-        if not chart_data.empty:
-            current_date = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD").getInfo()
-            if current_date in chart_data.index:
-                st.metric(f"Mean {parameter}", f"{chart_data.loc[current_date, 'Value']:.4f}")
-        
         st.caption(f"📅 **Time:** {timestamp}")
 
         vis = {"min": -1, "max": 1}
         if parameter == "Level1":
             bm = get_band_map(satellite)
-            vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": 3000 if "Sentinel" in satellite else 15000}
-        elif selected_palette: vis["palette"] = selected_palette
+            max_val = 3000 if "Sentinel" in satellite else 15000
+            vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": max_val}
+        elif selected_palette: 
+            vis["palette"] = selected_palette
         
         map_id = processed_img.clip(roi).getMapId(vis)
-        f_map = folium.Map(location=[(st.session_state.ul_lat + st.session_state.lr_lat)/2, (st.session_state.ul_lon + st.session_state.lr_lon)/2], zoom_start=12)
+        f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
         folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
     with c2:
         st.subheader("3. Export")
         fps = st.slider("Speed (FPS)", 1, 15, 5)
-        if st.button("🎬 Generate Timelapse"):
+        if st.button("🎬 Generate Animated Timelapse"):
             with st.spinner("Generating Video..."):
                 video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
