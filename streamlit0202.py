@@ -1,11 +1,10 @@
 import streamlit as st
 import ee
 import folium
-import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
-from datetime import date, datetime
+from datetime import date
 
 # ---------------- Session State ----------------
 if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
@@ -151,11 +150,18 @@ map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
 # Probe Mode logic
 if st.session_state.probe_mode:
-    st.info("Click on the image to probe values for the selected parameter.")
+    # JavaScript to change mouse cursor to pointer when probe mode is activated
+    st.markdown(
+        """
+        <style>
+        .leaflet-container {
+            cursor: pointer;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
-    # Handle map click event for probing
     if map_data and map_data.get("last_active_drawing"):
-        # Get the clicked location
+        # Get the coordinates of the clicked point
         click_lat, click_lon = map_data["last_active_drawing"]["geometry"]["coordinates"][0][0]
         
         # Create a point at the clicked location
@@ -179,69 +185,4 @@ if st.session_state.probe_mode:
             st.subheader(f"📍 Probed Area: ({click_lat:.4f}, {click_lon:.4f})")
             st.metric(label=f"Mean {parameter}", value=f"{value.get(parameter, 'N/A'):.4f}")
         else:
-            st.warning("No value found for the selected location.")
-
-# ---------------- Processing ----------------
-roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, st.session_state.lr_lon, st.session_state.ul_lat])
-col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
-full_collection = ee.ImageCollection(col_id).filterBounds(roi).filterDate(str(start_date), str(end_date)).map(lambda img: mask_clouds(img, satellite))
-
-total_available = full_collection.size().getInfo()
-display_collection = full_collection.sort("system:time_start").limit(30)
-display_count = display_collection.size().getInfo()
-
-if total_available > 0:
-    st.divider()
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Archive Images", total_available)
-    m2.metric("Preview Frames", display_count)
-    m3.metric("Sensor", satellite)
-
-    c1, c2 = st.columns([1, 1])
-
-    with c1:
-        st.subheader("2. Review & Stats")
-        idx = st.slider("Select Frame", 1, display_count, st.session_state.frame_idx)
-        st.session_state.frame_idx = idx
-        img = ee.Image(display_collection.toList(display_count).get(idx-1))
-        processed_img = apply_parameter(img, parameter, satellite)
-        
-        if parameter != "Level1":
-            with st.spinner("Calculating mean..."):
-                mean_dict = processed_img.reduceRegion(
-                    reducer=ee.Reducer.mean(),
-                    geometry=roi,
-                    scale=30,
-                    maxPixels=1e9
-                ).getInfo()
-                val = mean_dict.get(parameter)
-                if val is not None:
-                    st.metric(label=f"Mean {parameter}", value=f"{val:.4f}")
-
-        timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
-        st.caption(f"📅 **Time:** {timestamp}")
-
-        vis = {"min": -1, "max": 1}
-        if parameter == "Level1":
-            bm = get_band_map(satellite)
-            max_val = 3000 if "Sentinel" in satellite else 15000
-            vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": max_val}
-        elif selected_palette: 
-            vis["palette"] = selected_palette
-        
-        map_id = processed_img.clip(roi).getMapId(vis)
-        f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
-        folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
-        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
-
-    with c2:
-        st.subheader("3. Export")
-        fps = st.slider("Speed (FPS)", 1, 15, 5)
-        if st.button("🎬 Generate Animated Timelapse"):
-            with st.spinner("Generating..."):
-                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
-                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
-                st.image(video_url, caption=f"Timelapse: {parameter}")
-                st.markdown(f"### [📥 Download Result]({video_url})")
-else:
-    st.warning("No images found. Adjust your settings.")
+            st.warning("Please click on a valid image area to get the value.")
