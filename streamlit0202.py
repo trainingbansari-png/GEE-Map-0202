@@ -191,7 +191,7 @@ if total_available > 0:
             'Mean Value': val if val is not None else 'N/A'
         })
         
-        # Export button
+        # Export button for CSV
         if st.button("Export Image Data to CSV"):
             df = pd.DataFrame(image_data)
             csv = df.to_csv(index=False)
@@ -201,5 +201,29 @@ if total_available > 0:
                 file_name="image_data.csv",
                 mime="text/csv"
             )
+
+        # Timelapse export functionality
+        vis = {"min": -1, "max": 1}
+        if parameter == "Level1":
+            bm = get_band_map(satellite)
+            max_val = 3000 if "Sentinel" in satellite else 15000
+            vis = {"bands": [bm['red'], bm['green'], bm['blue']], "min": 0, "max": max_val}
+        elif selected_palette: 
+            vis["palette"] = selected_palette
+        
+        map_id = processed_img.clip(roi).getMapId(vis)
+        f_map = folium.Map(location=[center_lat, center_lon], zoom_start=12)
+        folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="GEE", overlay=True).add_to(f_map)
+        st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
+
+    with c2:
+        st.subheader("3. Export Timelapse")
+        fps = st.slider("Speed (FPS)", 1, 15, 5)
+        if st.button("🎬 Generate Animated Timelapse"):
+            with st.spinner("Generating..."):
+                video_col = display_collection.map(lambda i: apply_parameter(i, parameter, satellite).visualize(**vis).clip(roi))
+                video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
+                st.image(video_url, caption=f"Timelapse: {parameter}")
+                st.markdown(f"### [📥 Download Result]({video_url})")
 else:
     st.warning("No images found. Adjust your settings.")
