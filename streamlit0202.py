@@ -1,5 +1,3 @@
-this is the code
-
 import streamlit as st
 import ee
 import folium
