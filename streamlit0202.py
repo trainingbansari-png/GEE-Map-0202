@@ -5,8 +5,6 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
-import pandas as pd
-import io
 
 # ---------------- Session State ----------------
 if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
@@ -102,19 +100,13 @@ with st.sidebar:
 st.subheader("1. Area Selection")
 center_lat = (st.session_state.ul_lat + st.session_state.lr_lat) / 2
 center_lon = (st.session_state.ul_lon + st.session_state.lr_lon) / 2
-m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
 
-# Clear previous shapes before adding new one
+# Initialize the map
 m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
-
-# Drawing a rectangle for ROI
-folium.Rectangle(
-    bounds=[[st.session_state.lr_lat, st.session_state.ul_lon], [st.session_state.ul_lat, st.session_state.lr_lon]],
-    color="red", weight=2, fill=True, fill_opacity=0.1
-).add_to(m)
 
 # Adding Draw feature to the map
-Draw(draw_options={"rectangle": True, "polyline": False, "polygon": False, "circle": False, "marker": False}).add_to(m)
+draw = Draw(draw_options={"rectangle": True, "polyline": False, "polygon": False, "circle": False, "marker": False})
+draw.add_to(m)
 
 # Handle map data from the user's click
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
@@ -126,6 +118,19 @@ if map_data and map_data.get("last_active_drawing"):
     lons, lats = zip(*new_coords)
     st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
     st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
+
+    # Clear the map and draw the new rectangle
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
+    folium.Rectangle(
+        bounds=[[st.session_state.lr_lat, st.session_state.ul_lon], [st.session_state.ul_lat, st.session_state.lr_lon]],
+        color="red", weight=2, fill=True, fill_opacity=0.1
+    ).add_to(m)
+
+    # Re-add the draw tool to the new map
+    draw.add_to(m)
+
+    # Update the map with the new drawing
+    map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
 # ---------------- Image Collection and Processing ----------------
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, st.session_state.lr_lon, st.session_state.ul_lat])
@@ -149,8 +154,9 @@ if total_available > 0:
         idx = st.slider("Select Frame", 1, display_collection.size().getInfo(), st.session_state.frame_idx)
         st.session_state.frame_idx = idx
         img = ee.Image(display_collection.toList(display_collection.size().getInfo()).get(idx-1))
-        processed_img = apply_parameter(img, parameter, satellite)
         
+        processed_img = apply_parameter(img, parameter, satellite)
+
         if parameter != "Level1":
             with st.spinner("Calculating mean..."):
                 mean_dict = processed_img.reduceRegion(
