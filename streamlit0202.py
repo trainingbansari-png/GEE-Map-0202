@@ -98,6 +98,33 @@ with st.sidebar:
     }
     selected_palette = palettes[palette_choice]
 
+    # --- FULL FORM & RANGE GUIDE TABLE ---
+    st.divider()
+    st.header("📖 Color Range Table")
+    
+    if parameter == "NDVI":
+        st.table({
+            "Color Name": ["Dark Green", "Light Green", "Yellow/Brown", "Blue"],
+            "Range": ["0.6 to 1.0", "0.2 to 0.6", "0.0 to 0.2", "-1.0 to -0.1"],
+            "Meaning": ["Forest", "Crops/Grass", "Soil/Urban", "Water/Snow"]
+        })
+    elif parameter == "NDWI":
+        st.table({
+            "Color Name": ["Dark Blue", "Light Blue", "White"],
+            "Range": ["0.3 to 1.0", "0.0 to 0.3", "-1.0 to 0.0"],
+            "Meaning": ["Deep Water", "Shallow Water", "Dry Land"]
+        })
+    elif parameter == "MNDWI":
+        st.info("Uses SWIR band to better distinguish water from urban buildings.")
+    elif parameter == "NDSI":
+        st.table({
+            "Color Name": ["Bright White", "Grey", "Black"],
+            "Range": ["0.4 to 1.0", "0.1 to 0.4", "-1.0 to 0.1"],
+            "Meaning": ["Snow Cover", "Ice/Clouds", "Land/Water"]
+        })
+    elif parameter == "EVI":
+        st.info("Improves on NDVI by reducing atmospheric noise and soil background interference.")
+
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
 center_lat = (st.session_state.ul_lat + st.session_state.lr_lat) / 2
@@ -161,7 +188,7 @@ if total_available > 0:
                     scale=30,
                     maxPixels=1e9
                 ).getInfo()
-                val = mean_dict.get(parameter, 'N/A')  # Use 'N/A' if None
+                val = mean_dict.get(parameter, 'N/A')
                 
                 st.metric(label=f"Mean {parameter}", value=f"{val:.4f}" if val != 'N/A' else 'N/A')
 
