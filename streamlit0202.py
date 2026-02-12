@@ -6,6 +6,7 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date, datetime
+import io
 
 # ---------------- Session State ----------------
 if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
@@ -238,5 +239,38 @@ if total_available > 0:
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
                 st.markdown(f"### [📥 Download Result]({video_url})")
+                
+    # --- Create a DataFrame for CSV ---
+    def create_data_for_csv():
+        data = {
+            "Parameter": [parameter],
+            "Total Available Images": [total_available],
+            "Preview Frames": [display_count],
+            "Selected Satellite": [satellite],
+            "Start Date": [start_date],
+            "End Date": [end_date],
+            "Mean Value": [val if parameter != "Level1" else "N/A"],
+        }
+        df = pd.DataFrame(data)
+        return df
+
+    # --- Convert DataFrame to CSV ---
+    def convert_df_to_csv(df):
+        csv = df.to_csv(index=False)
+        return csv
+
+    # --- CSV Download Button ---
+    with st.sidebar:
+        st.divider()
+        if st.button("Download CSV"):
+            df = create_data_for_csv()
+            csv = convert_df_to_csv(df)
+            st.download_button(
+                label="Download CSV",
+                data=csv,
+                file_name="gee_project_data.csv",
+                mime="text/csv"
+            )
+
 else:
     st.warning("No images found. Adjust your settings.")
