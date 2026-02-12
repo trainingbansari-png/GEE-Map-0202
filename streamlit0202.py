@@ -12,7 +12,6 @@ if "ul_lon" not in st.session_state: st.session_state.ul_lon = 69.5
 if "lr_lat" not in st.session_state: st.session_state.lr_lat = 21.5
 if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
 if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
-if "probe_mode" not in st.session_state: st.session_state.probe_mode = False  # Probe mode state
 
 # ---------------- EE Init ----------------
 def initialize_ee():
@@ -124,36 +123,6 @@ with st.sidebar:
     elif parameter == "EVI":
         st.info("Improves on NDVI by reducing atmospheric noise and soil background interference.")
 
-    # Probe Mode checkbox (deactivated by default)
-    probe_mode = st.checkbox("Activate Probe Mode", value=st.session_state.probe_mode, key="probe_checkbox")
-    st.session_state.probe_mode = probe_mode
-
-    if st.session_state.probe_mode:
-        st.info("Probe mode is activated! Click on the map to probe values.")
-    else:
-        # Include JavaScript to change cursor style when the probe mode is activated
-        st.components.v1.html("""
-            <style>
-                .leaflet-container {
-                    cursor: default;
-                }
-                .leaflet-container.pointer {
-                    cursor: pointer;
-                }
-            </style>
-            <script>
-                const probeCheckbox = document.getElementById('probe_checkbox');
-                const map = document.querySelector('.leaflet-container');
-                probeCheckbox.addEventListener('change', () => {
-                    if (probeCheckbox.checked) {
-                        map.classList.add('pointer');
-                    } else {
-                        map.classList.remove('pointer');
-                    }
-                });
-            </script>
-        """, height=0)
-
 # ---------------- Main Logic ----------------
 st.subheader("1. Area Selection")
 center_lat = (st.session_state.ul_lat + st.session_state.lr_lat) / 2
@@ -178,34 +147,6 @@ if map_data and map_data.get("last_active_drawing"):
     lons, lats = zip(*new_coords)
     st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
     st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
-
-    # Handle probing functionality only if probe mode is activated
-    if st.session_state.probe_mode:
-        # Get the clicked location
-        click_lat, click_lon = map_data["last_active_drawing"]["geometry"]["coordinates"][0][0]
-        
-        # Create a point at the clicked location
-        point = ee.Geometry.Point(click_lon, click_lat)
-
-        # Get the image at the selected location
-        img = ee.Image(display_collection.toList(display_count).get(st.session_state.frame_idx - 1))
-
-        # Apply the selected parameter to the image
-        processed_img = apply_parameter(img, parameter, satellite)
-        
-        # Get the value of the parameter at the clicked location
-        value = processed_img.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=point,
-            scale=30,
-            maxPixels=1e9
-        ).getInfo()
-
-        if value:
-            st.subheader(f"📍 Probed Area: ({click_lat:.4f}, {click_lon:.4f})")
-            st.metric(label=f"Mean {parameter}", value=f"{value.get(parameter, 'N/A'):.4f}")
-        else:
-            st.warning("Please click on a valid image area.")
 
 # ---------------- Processing ----------------
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, st.session_state.lr_lon, st.session_state.ul_lat])
