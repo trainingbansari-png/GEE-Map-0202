@@ -161,20 +161,19 @@ if total_available > 0:
                     scale=30,
                     maxPixels=1e9
                 ).getInfo()
-                val = mean_dict.get(parameter)
-                if val is not None:
-                    st.metric(label=f"Mean {parameter}", value=f"{val:.4f}")
+                val = mean_dict.get(parameter, 'N/A')  # Use 'N/A' if None
+                
+                st.metric(label=f"Mean {parameter}", value=f"{val:.4f}" if val != 'N/A' else 'N/A')
 
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
         st.caption(f"📅 **Time:** {timestamp}")
 
         # Prepare data for CSV export
-        image_data = []
-        image_data.append({
+        image_data = [{
             'Timestamp': timestamp,
             'Parameter': parameter,
-            'Mean Value': val if val is not None else 'N/A'
-        })
+            'Mean Value': val
+        }]
         
         # Export button for CSV
         if st.button("Export Image Data to CSV"):
