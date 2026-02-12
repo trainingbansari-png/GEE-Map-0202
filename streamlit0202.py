@@ -1,12 +1,11 @@
 import streamlit as st
 import ee
 import folium
+import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
-from datetime import date
-import pandas as pd
-import io
+from datetime import date, datetime
 
 # ---------------- Session State ----------------
 if "ul_lat" not in st.session_state: st.session_state.ul_lat = 22.5
@@ -129,25 +128,13 @@ with st.sidebar:
 st.subheader("1. Area Selection")
 center_lat = (st.session_state.ul_lat + st.session_state.lr_lat) / 2
 center_lon = (st.session_state.ul_lon + st.session_state.lr_lon) / 2
-
-# Create the map and display it
 m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
 
-# Function to clear existing rectangles and draw new one
-def draw_rectangle():
-    # Clear any previous rectangles (redrawing the map will ensure this)
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
-    
-    # Drawing a new rectangle for ROI
-    folium.Rectangle(
-        bounds=[[st.session_state.lr_lat, st.session_state.ul_lon], [st.session_state.ul_lat, st.session_state.lr_lon]],
-        color="red", weight=2, fill=True, fill_opacity=0.1
-    ).add_to(m)
-
-    return m
-
-# Draw the rectangle based on user input
-m = draw_rectangle()
+# Drawing a rectangle for ROI
+folium.Rectangle(
+    bounds=[[st.session_state.lr_lat, st.session_state.ul_lon], [st.session_state.ul_lat, st.session_state.lr_lon]],
+    color="red", weight=2, fill=True, fill_opacity=0.1
+).add_to(m)
 
 # Adding Draw feature to the map
 Draw(draw_options={"rectangle": True, "polyline": False, "polygon": False, "circle": False, "marker": False}).add_to(m)
@@ -155,7 +142,41 @@ Draw(draw_options={"rectangle": True, "polyline": False, "polygon": False, "circ
 # Handle map data from the user's click
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
-# ---------------- Image Collection and Processing ----------------
+if map_data and map_data.get("last_active_drawing"):
+    # Get the coordinates of the last drawing
+    new_coords = map_data["last_active_drawing"]["geometry"]["coordinates"][0]
+    lons, lats = zip(*new_coords)
+    st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
+    st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
+
+    # --- Probing the clicked area ---
+    # Get the clicked location
+    click_lat, click_lon = map_data["last_active_drawing"]["geometry"]["coordinates"][0][0]
+    
+    # Create a point at the clicked location
+    point = ee.Geometry.Point(click_lon, click_lat)
+
+    # Get the image at the selected location
+    img = ee.Image(display_collection.toList(display_count).get(st.session_state.frame_idx - 1))
+
+    # Apply the selected parameter to the image
+    processed_img = apply_parameter(img, parameter, satellite)
+    
+    # Get the value of the parameter at the clicked location
+    value = processed_img.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=point,
+        scale=30,
+        maxPixels=1e9
+    ).getInfo()
+
+    if value:
+        st.subheader(f"📍 Probed Area: ({click_lat:.4f}, {click_lon:.4f})")
+        st.metric(label=f"Mean {parameter}", value=f"{value.get(parameter, 'N/A'):.4f}")
+    else:
+        st.warning("No value found for the selected location.")
+
+# ---------------- Processing ----------------
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, st.session_state.lr_lon, st.session_state.ul_lat])
 col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
 full_collection = ee.ImageCollection(col_id).filterBounds(roi).filterDate(str(start_date), str(end_date)).map(lambda img: mask_clouds(img, satellite))
@@ -188,32 +209,13 @@ if total_available > 0:
                     scale=30,
                     maxPixels=1e9
                 ).getInfo()
-                val = mean_dict.get(parameter, 'N/A')
-                
-                st.metric(label=f"Mean {parameter}", value=f"{val:.4f}" if val != 'N/A' else 'N/A')
+                val = mean_dict.get(parameter)
+                if val is not None:
+                    st.metric(label=f"Mean {parameter}", value=f"{val:.4f}")
 
         timestamp = ee.Date(img.get("system:time_start")).format("YYYY-MM-DD HH:mm:ss").getInfo()
         st.caption(f"📅 **Time:** {timestamp}")
 
-        # Prepare data for CSV export
-        image_data = [{
-            'Timestamp': timestamp,
-            'Parameter': parameter,
-            'Mean Value': val
-        }]
-        
-        # Export button for CSV
-        if st.button("Export Image Data to CSV"):
-            df = pd.DataFrame(image_data)
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="Download CSV",
-                data=csv,
-                file_name="image_data.csv",
-                mime="text/csv"
-            )
-
-        # Timelapse export functionality
         vis = {"min": -1, "max": 1}
         if parameter == "Level1":
             bm = get_band_map(satellite)
@@ -228,7 +230,7 @@ if total_available > 0:
         st_folium(f_map, height=400, width="100%", key=f"rev_{idx}_{parameter}_{palette_choice}")
 
     with c2:
-        st.subheader("3. Export Timelapse")
+        st.subheader("3. Export")
         fps = st.slider("Speed (FPS)", 1, 15, 5)
         if st.button("🎬 Generate Animated Timelapse"):
             with st.spinner("Generating..."):
