@@ -16,21 +16,21 @@ if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
 if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
 
 # ---------------- EE Init ----------------
-def initialize_ee():
+           def initialize_ee():
     try:
-        ee.GetLibraryVersion()
-    except Exception:
-        try:
-            if "GCP_SERVICE_ACCOUNT_JSON" in st.secrets:
-                service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
-                credentials = service_account.Credentials.from_service_account_info(
-                    service_account_info,
-                    scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
-                )
-                ee.Initialize(credentials)
-        except Exception as e:
-            st.sidebar.error(f"EE Init Error: {e}")
-
+        with open("gcp_key.json") as f:
+            info = json.load(f)
+        
+        credentials = service_account.Credentials.from_service_account_info(info)
+        
+        # KEY CHANGE: Pass the project ID explicitly
+        ee.Initialize(
+            credentials=credentials,
+            project='my-project-0102-486108' # Use your actual project ID string here
+        )
+        print("✅ Earth Engine Initialized Successfully!")
+    except Exception as e:
+        print(f"❌ EE Init Error: {e}")
 initialize_ee()
 
 # ---------------- Helper Functions ----------------
