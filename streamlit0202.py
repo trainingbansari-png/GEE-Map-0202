@@ -1,6 +1,7 @@
 import streamlit as st
 import ee
 import folium
+import json
 import pandas as pd
 from folium.plugins import Draw
 from streamlit_folium import st_folium
@@ -16,21 +17,29 @@ if "lr_lon" not in st.session_state: st.session_state.lr_lon = 70.5
 if "frame_idx" not in st.session_state: st.session_state.frame_idx = 1
 
 # ---------------- EE Init ----------------
-           def initialize_ee():
+def initialize_ee():
     try:
-        with open("gcp_key.json") as f:
-            info = json.load(f)
+        # Check if running on Streamlit Cloud (st.secrets) or local (gcp_key.json)
+        if "GCP_SERVICE_ACCOUNT_JSON" in st.secrets:
+            info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
+        else:
+            with open("gcp_key.json") as f:
+                info = json.load(f)
         
-        credentials = service_account.Credentials.from_service_account_info(info)
+        credentials = service_account.Credentials.from_service_account_info(
+            info,
+            scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
+        )
         
-        # KEY CHANGE: Pass the project ID explicitly
+        # Added project ID explicitly to prevent redacted error messages
         ee.Initialize(
             credentials=credentials,
-            project='my-project-0102-486108' # Use your actual project ID string here
+            project='my-project-0102-486108' 
         )
-        print("✅ Earth Engine Initialized Successfully!")
+        st.sidebar.success("✅ Earth Engine Initialized")
     except Exception as e:
-        print(f"❌ EE Init Error: {e}")
+        st.sidebar.error(f"❌ EE Init Error: {e}")
+
 initialize_ee()
 
 # ---------------- Helper Functions ----------------
@@ -77,7 +86,6 @@ with st.sidebar:
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
     
-    # PARAMETER SELECTION WITH DESCRIPTIONS
     param_options = {
         "Level1": "Natural Color (RGB)",
         "NDVI": "NDVI - Normalized Difference Vegetation Index",
@@ -98,7 +106,6 @@ with st.sidebar:
     }
     selected_palette = palettes[palette_choice]
 
-    # --- FULL FORM & RANGE GUIDE TABLE ---
     st.divider()
     st.header("📖 Color Range Table")
     
@@ -131,62 +138,40 @@ center_lat = (st.session_state.ul_lat + st.session_state.lr_lat) / 2
 center_lon = (st.session_state.ul_lon + st.session_state.lr_lon) / 2
 m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
 
-# Drawing a rectangle for ROI
 folium.Rectangle(
     bounds=[[st.session_state.lr_lat, st.session_state.ul_lon], [st.session_state.ul_lat, st.session_state.lr_lon]],
     color="red", weight=2, fill=True, fill_opacity=0.1
 ).add_to(m)
 
-# Adding Draw feature to the map
 Draw(draw_options={"rectangle": True, "polyline": False, "polygon": False, "circle": False, "marker": False}).add_to(m)
 
-# Handle map data from the user's click
 map_data = st_folium(m, height=350, width="100%", key="roi_map")
 
+# --- Initialize variables to prevent NameErrors ---
+val = None 
+display_count = 0
+total_available = 0
+
 if map_data and map_data.get("last_active_drawing"):
-    # Get the coordinates of the last drawing
     new_coords = map_data["last_active_drawing"]["geometry"]["coordinates"][0]
     lons, lats = zip(*new_coords)
     st.session_state.ul_lat, st.session_state.ul_lon = max(lats), min(lons)
     st.session_state.lr_lat, st.session_state.lr_lon = min(lats), max(lons)
-
-    # --- Probing the clicked area ---
-    # Get the clicked location
-    click_lat, click_lon = map_data["last_active_drawing"]["geometry"]["coordinates"][0][0]
-    
-    # Create a point at the clicked location
-    point = ee.Geometry.Point(click_lon, click_lat)
-
-    # Get the image at the selected location
-    img = ee.Image(display_collection.toList(display_count).get(st.session_state.frame_idx - 1))
-
-    # Apply the selected parameter to the image
-    processed_img = apply_parameter(img, parameter, satellite)
-    
-    # Get the value of the parameter at the clicked location
-    value = processed_img.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=point,
-        scale=30,
-        maxPixels=1e9
-    ).getInfo()
-
-    if value:
-        st.subheader(f"📍 Probed Area: ({click_lat:.4f}, {click_lon:.4f})")
-        st.metric(label=f"Mean {parameter}", value=f"{value.get(parameter, 'N/A'):.4f}")
-    else:
-        st.warning("No value found for the selected location.")
 
 # ---------------- Processing ----------------
 roi = ee.Geometry.Rectangle([st.session_state.ul_lon, st.session_state.lr_lat, st.session_state.lr_lon, st.session_state.ul_lat])
 col_id = {"Sentinel-2": "COPERNICUS/S2_SR_HARMONIZED", "Landsat-8": "LANDSAT/LC08/C02/T1_L2", "Landsat-9": "LANDSAT/LC09/C02/T1_L2"}[satellite]
 full_collection = ee.ImageCollection(col_id).filterBounds(roi).filterDate(str(start_date), str(end_date)).map(lambda img: mask_clouds(img, satellite))
 
-total_available = full_collection.size().getInfo()
-display_collection = full_collection.sort("system:time_start").limit(30)
-display_count = display_collection.size().getInfo()
+try:
+    total_available = full_collection.size().getInfo()
+except:
+    total_available = 0
 
 if total_available > 0:
+    display_collection = full_collection.sort("system:time_start").limit(30)
+    display_count = display_collection.size().getInfo()
+
     st.divider()
     m1, m2, m3 = st.columns(3)
     m1.metric("Archive Images", total_available)
@@ -239,8 +224,7 @@ if total_available > 0:
                 video_url = video_col.getVideoThumbURL({'dimensions': 720, 'region': roi, 'framesPerSecond': fps, 'crs': 'EPSG:3857'})
                 st.image(video_url, caption=f"Timelapse: {parameter}")
                 st.markdown(f"### [📥 Download Result]({video_url})")
-                
-    # --- Create a DataFrame for CSV ---
+
     def create_data_for_csv():
         data = {
             "Parameter": [parameter],
@@ -251,26 +235,18 @@ if total_available > 0:
             "End Date": [end_date],
             "Mean Value": [val if parameter != "Level1" else "N/A"],
         }
-        df = pd.DataFrame(data)
-        return df
+        return pd.DataFrame(data)
 
-    # --- Convert DataFrame to CSV ---
-    def convert_df_to_csv(df):
-        csv = df.to_csv(index=False)
-        return csv
-
-    # --- CSV Download Button ---
     with st.sidebar:
         st.divider()
         if st.button("Download CSV"):
             df = create_data_for_csv()
-            csv = convert_df_to_csv(df)
+            csv = df.to_csv(index=False)
             st.download_button(
                 label="Download CSV",
                 data=csv,
                 file_name="gee_project_data.csv",
                 mime="text/csv"
             )
-
 else:
     st.warning("No images found. Adjust your settings.")
