@@ -6,9 +6,34 @@ from folium.plugins import Draw
 from streamlit_folium import st_folium
 from google.oauth2 import service_account
 from datetime import date
-import io
 
-# ---------------- Session State ----------------
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(layout="wide")
+
+# ---------------- EE INIT (STREAMLIT CLOUD SAFE) ----------------
+def initialize_ee():
+    try:
+        if not ee.data._initialized:
+            if "GCP_SERVICE_ACCOUNT_JSON" not in st.secrets:
+                st.error("❌ Missing GCP service account in secrets.toml")
+                st.stop()
+
+            service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
+
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info,
+                scopes=["https://www.googleapis.com/auth/earthengine"]
+            )
+
+            ee.Initialize(credentials)
+
+    except Exception as e:
+        st.error(f"❌ Earth Engine Initialization Failed: {e}")
+        st.stop()
+
+initialize_ee()
+
+# ---------------- SESSION STATE ----------------
 if "ul_lat" not in st.session_state:
     st.session_state.ul_lat = 22.5
 if "ul_lon" not in st.session_state:
@@ -20,25 +45,7 @@ if "lr_lon" not in st.session_state:
 if "frame_idx" not in st.session_state:
     st.session_state.frame_idx = 1
 
-# ---------------- EE Init ----------------
-def initialize_ee():
-    try:
-        ee.Initialize()
-    except Exception:
-        try:
-            if "GCP_SERVICE_ACCOUNT_JSON" in st.secrets:
-                service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
-                credentials = service_account.Credentials.from_service_account_info(
-                    service_account_info,
-                    scopes=["https://www.googleapis.com/auth/earthengine.readonly"],
-                )
-                ee.Initialize(credentials)
-        except Exception as e:
-            st.sidebar.error(f"EE Init Error: {e}")
-
-initialize_ee()
-
-# ---------------- Helper Functions ----------------
+# ---------------- HELPER FUNCTIONS ----------------
 def get_band_map(satellite):
     if "Sentinel" in satellite:
         return {"red": "B4", "green": "B3", "blue": "B2", "nir": "B8", "swir1": "B11"}
@@ -84,14 +91,14 @@ def apply_parameter(image, parameter, satellite):
     return image
 
 
-# ---------------- Sidebar ----------------
+# ---------------- SIDEBAR ----------------
 with st.sidebar:
     st.header("📍 ROI & Config")
 
-    u_lat = st.number_input("Upper Lat", value=float(st.session_state.ul_lat), format="%.4f")
-    u_lon = st.number_input("Left Lon", value=float(st.session_state.ul_lon), format="%.4f")
-    l_lat = st.number_input("Lower Lat", value=float(st.session_state.lr_lat), format="%.4f")
-    l_lon = st.number_input("Right Lon", value=float(st.session_state.lr_lon), format="%.4f")
+    u_lat = st.number_input("Upper Lat", value=float(st.session_state.ul_lat))
+    u_lon = st.number_input("Left Lon", value=float(st.session_state.ul_lon))
+    l_lat = st.number_input("Lower Lat", value=float(st.session_state.lr_lat))
+    l_lon = st.number_input("Right Lon", value=float(st.session_state.lr_lon))
 
     st.session_state.ul_lat = u_lat
     st.session_state.ul_lon = u_lon
@@ -101,60 +108,9 @@ with st.sidebar:
     start_date = st.date_input("Start Date", date(2024, 1, 1))
     end_date = st.date_input("End Date", date(2024, 12, 31))
     satellite = st.selectbox("Satellite", ["Sentinel-2", "Landsat-8", "Landsat-9"])
+    parameter = st.selectbox("Parameter", ["Level1", "NDVI", "NDWI", "MNDWI", "NDSI", "EVI"])
 
-    param_options = {
-        "Level1": "Natural Color (RGB)",
-        "NDVI": "NDVI - Normalized Difference Vegetation Index",
-        "NDWI": "NDWI - Normalized Difference Water Index",
-        "MNDWI": "MNDWI - Modified Normalized Difference Water Index",
-        "NDSI": "NDSI - Normalized Difference Snow Index",
-        "EVI": "EVI - Enhanced Vegetation Index",
-    }
-
-    param_label = st.selectbox("Select Parameter", list(param_options.values()))
-    parameter = param_label.split(" - ")[0] if " - " in param_label else "Level1"
-
-    palette_choice = st.selectbox(
-        "Color Theme",
-        ["Vegetation (Green)", "Water (Blue)", "Thermal (Red)", "No Color (Grayscale)"],
-    )
-
-    palettes = {
-        "Vegetation (Green)": ["#ffffff", "#ce7e45", "#fcd163", "#66a000", "#056201", "#011301"],
-        "Water (Blue)": ["#ffffd9", "#7fcdbb", "#41b6c4", "#1d91c0", "#225ea8", "#0c2c84"],
-        "Thermal (Red)": ["#ffffff", "#fc9272", "#ef3b2c", "#cb181d", "#a50f15", "#67000d"],
-        "No Color (Grayscale)": None,
-    }
-
-    selected_palette = palettes[palette_choice]
-
-    st.divider()
-    st.header("📖 Color Range Table")
-
-    if parameter == "NDVI":
-        st.table({
-            "Color Name": ["Dark Green", "Light Green", "Yellow/Brown", "Blue"],
-            "Range": ["0.6 to 1.0", "0.2 to 0.6", "0.0 to 0.2", "-1.0 to -0.1"],
-            "Meaning": ["Forest", "Crops/Grass", "Soil/Urban", "Water/Snow"]
-        })
-    elif parameter == "NDWI":
-        st.table({
-            "Color Name": ["Dark Blue", "Light Blue", "White"],
-            "Range": ["0.3 to 1.0", "0.0 to 0.3", "-1.0 to 0.0"],
-            "Meaning": ["Deep Water", "Shallow Water", "Dry Land"]
-        })
-    elif parameter == "MNDWI":
-        st.info("Uses SWIR band to better distinguish water from urban buildings.")
-    elif parameter == "NDSI":
-        st.table({
-            "Color Name": ["Bright White", "Grey", "Black"],
-            "Range": ["0.4 to 1.0", "0.1 to 0.4", "-1.0 to 0.1"],
-            "Meaning": ["Snow Cover", "Ice/Clouds", "Land/Water"]
-        })
-    elif parameter == "EVI":
-        st.info("Improves on NDVI by reducing atmospheric noise and soil background interference.")
-
-# ---------------- Processing ----------------
+# ---------------- PROCESSING ----------------
 roi = ee.Geometry.Rectangle([
     st.session_state.ul_lon,
     st.session_state.lr_lat,
@@ -176,8 +132,15 @@ full_collection = (
 )
 
 total_available = full_collection.size().getInfo()
+
+if total_available == 0:
+    st.warning("No images found.")
+    st.stop()
+
 display_collection = full_collection.sort("system:time_start").limit(30)
 display_count = display_collection.size().getInfo()
 
-if total_available == 0:
-    st.warning("No images found. Adjust your settings.")
+st.success("✅ Earth Engine Connected Successfully")
+
+st.metric("Total Images Found", total_available)
+st.metric("Preview Frames", display_count)
