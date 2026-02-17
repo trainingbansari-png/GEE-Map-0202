@@ -13,19 +13,19 @@ st.set_page_config(layout="wide")
 # ---------------- EE INIT (STREAMLIT CLOUD SAFE) ----------------
 def initialize_ee():
     try:
-        if not ee.data._initialized:
-            if "GCP_SERVICE_ACCOUNT_JSON" not in st.secrets:
-                st.error("❌ Missing GCP service account in secrets.toml")
-                st.stop()
+        # Check if credentials exist in Streamlit secrets
+        if "GCP_SERVICE_ACCOUNT_JSON" not in st.secrets:
+            st.error("❌ Missing GCP service account in secrets.toml")
+            st.stop()
 
-            service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
+        service_account_info = dict(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
 
-            credentials = service_account.Credentials.from_service_account_info(
-                service_account_info,
-                scopes=["https://www.googleapis.com/auth/earthengine"]
-            )
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=["https://www.googleapis.com/auth/earthengine"]
+        )
 
-            ee.Initialize(credentials)
+        ee.Initialize(credentials)
 
     except Exception as e:
         st.error(f"❌ Earth Engine Initialization Failed: {e}")
